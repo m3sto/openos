@@ -159,6 +159,8 @@ class SettingsApp {
         this.toggle('system.reduceMotion')),
       this.row('volume', 'var(--pink)', 'Arayüz sesleri', 'Tıklama ve uyarı sesleri',
         this.toggle('system.sounds')),
+      this.row('compass', 'var(--indigo)', 'OpenOS imleci', 'Sistemin kendi çizdiği imleç takımı',
+        this.toggle('system.cursor')),
     );
     this.group('Oturum',
       this.row('lock', 'var(--gray)', 'Ekranı kilitle', 'Ctrl/⌘ + L',

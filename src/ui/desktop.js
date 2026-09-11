@@ -2,7 +2,7 @@
    OpenOS · ui/desktop.js — wallpaper, icons, widgets and the shell overlays
    ========================================================================== */
 
-import { h, clear, add, on, clamp, drag, fmtTime, fmtDate, debounce, sleep, throttle } from '../core/util.js';
+import { h, clear, add, on, clamp, drag, fmtTime, fmtDate, relTime, debounce, sleep, throttle } from '../core/util.js';
 import { icon, hasIcon } from '../core/icons.js';
 import { menu, contextMenu } from './menu.js';
 import { Dock } from './dock.js';
@@ -58,7 +58,7 @@ export class Desktop {
     this.bindDesktopEvents();
 
     settings.bus.on('change', p => {
-      if (p === 'wallpaper' || p === 'wallpaperMotion') this.startWallpaper();
+      if (p === 'wallpaper' || p === 'wallpaperMotion' || p === 'graphics.wallpaperFps') this.startWallpaper();
       if (p.startsWith('desktop')) { this.renderIcons(); this.renderWidgets(); }
     });
     vfs.bus.on('change', debounce(() => this.renderIcons(), 120));
@@ -79,13 +79,17 @@ export class Desktop {
     resize();
     this._wallResize ||= on(window, 'resize', throttle(() => { resize(); paintWallpaper(this.wallCanvas, settings.get('wallpaper'), this._t || 0); }, 180));
 
-    const animated = wp.animated && settings.get('wallpaperMotion') && !settings.get('system.reduceMotion');
+    const animated = wp.animated && settings.get('wallpaperMotion')
+      && !settings.get('system.reduceMotion') && (settings.get('graphics.wallpaperFps') ?? 15) > 0;
     if (!animated) { paintWallpaper(this.wallCanvas, id, 0); return; }
 
     let t = 0, last = 0;
     const loop = (ts) => {
       this._wallRaf = requestAnimationFrame(loop);
-      if (ts - last < 66) return;      /* ~15fps is plenty for a wallpaper */
+      /* Kare hızı Grafik İşletici'den gelir; 0 ise duvar kâğıdı donuk kalır. */
+      const fps = settings.get('graphics.wallpaperFps') ?? 15;
+      if (fps <= 0) return;
+      if (ts - last < 1000 / fps) return;
       last = ts; t += 0.5; this._t = t;
       paintWallpaper(this.wallCanvas, id, t);
     };
@@ -137,6 +141,25 @@ export class Desktop {
       contextMenu(el, () => this.fileMenu(s));
       this.iconLayer.appendChild(el);
     });
+  }
+
+  /** Masaüstü simgelerini ızgaraya oturtur; istenirse ada/türe göre sıralar. */
+  arrangeIcons(mode = 'grid') {
+    let items = [];
+    try { items = vfs.list(this.desktopPath); } catch { return; }
+    if (mode === 'name') items.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    else if (mode === 'kind') items.sort((a, b) =>
+      (a.type === b.type ? (a.ext || '').localeCompare(b.ext || '') || a.name.localeCompare(b.name, 'tr')
+                         : a.type === 'dir' ? -1 : 1));
+    const colW = 96, rowH = 100;
+    const perCol = Math.max(1, Math.floor((this.el.clientHeight - 120) / rowH));
+    const map = {};
+    items.forEach((s, i) => {
+      map[s.path] = { x: 14 + Math.floor(i / perCol) * colW, y: 12 + (i % perCol) * rowH };
+    });
+    settings.set('desktopIcons', map);
+    this.renderIcons();
+    notify.toast(mode === 'grid' ? 'Simgeler hizalandı' : 'Simgeler sıralandı', { glyph: '🧲' });
   }
 
   select(path, el) { this.selection.add(path); el.classList.add('sel'); }
@@ -197,7 +220,10 @@ export class Desktop {
         { label: 'Yeni OpenSharp Uygulaması', glyph: 'sparkles',
           run: () => this.os.openApp('studio', { create: true }) },
         '-',
-        { label: 'Simgeleri Düzenle', glyph: 'grid', run: () => { settings.set('desktopIcons', {}); this.renderIcons(); } },
+        { label: 'Simgeleri Hizala', glyph: 'grid', run: () => this.arrangeIcons('grid') },
+        { label: 'Ada Göre Sırala', glyph: 'list', run: () => this.arrangeIcons('name') },
+        { label: 'Türe Göre Sırala', glyph: 'filter', run: () => this.arrangeIcons('kind') },
+        { label: 'Yerleşimi Sıfırla', glyph: 'refresh', run: () => { settings.set('desktopIcons', {}); this.renderIcons(); } },
         { label: 'Duvar Kâğıdını Değiştir…', glyph: 'wallpaper', run: () => this.os.openApp('settings', { pane: 'wallpaper' }) },
         '-',
         { label: 'Widget’lar', checked: settings.get('desktop.showWidgets'),
@@ -411,6 +437,52 @@ export class Desktop {
     input.focus();
   }
 
+  /* ================= bildirim merkezi ================= */
+  toggleNotificationCenter() {
+    if (this.overlays.notifc) return this.closeOverlay('notifc');
+    const list = h('div.nc-list.k-scroll');
+    const panel = h('div.notif-center',
+      h('div.nc-head',
+        h('div.k-text', { text: 'Bildirimler', style: { fontWeight: 650, flex: 1 } }),
+        h('button.k-btn.v-ghost.s-sm', { text: 'Temizle', onclick: () => {
+          notify.clearHistory(); this.closeOverlay('notifc'); this.menubar.syncNotifBadge();
+        } })),
+      list);
+
+    const items = notify.history;
+    if (!items.length) {
+      list.appendChild(h('div.k-empty', { style: { padding: '40px 16px' } },
+        h('div.glyph', { html: icon('bellOff', 34) }),
+        h('div.k-text.t-callout', { text: 'Bildirim yok' })));
+    } else {
+      const today = new Date().toDateString();
+      let lastGroup = null;
+      items.forEach(n => {
+        const g = new Date(n.time).toDateString() === today ? 'Bugün' : 'Daha önce';
+        if (g !== lastGroup) { list.appendChild(h('div.nc-group', { text: g })); lastGroup = g; }
+        const glyphHtml = n.glyph && n.glyph.length <= 3 && !/^[a-z]+$/i.test(n.glyph)
+          ? n.glyph : icon(n.glyph || 'bell', 15);
+        const row = h('div.nc-item', { class: n.seen ? '' : 'unseen' },
+          h('div.app-icon', { style: { '--ic1': n.tint[0], '--ic2': n.tint[1], width: '28px', height: '28px' },
+            html: glyphHtml }),
+          h('div.k-vstack', { style: { flex: 1, minWidth: 0, gap: '1px' } },
+            h('div.k-text', { text: n.title, style: { fontWeight: 560 } }),
+            n.body ? h('div.k-text.t-caption', { text: n.body }) : null),
+          h('div.k-text.t-caption', { text: relTime(n.time, 'tr') }));
+        if (n.onClick) row.addEventListener('click', () => { n.onClick(); this.closeOverlay('notifc'); });
+        list.appendChild(row);
+      });
+    }
+
+    this.el.appendChild(panel);
+    this.overlays.notifc = panel;
+    notify.markAllSeen();
+    this.menubar.syncNotifBadge();
+    this._ncDismiss = on(this.el, 'pointerdown', e => {
+      if (!panel.contains(e.target) && !e.target.closest('.menubar')) this.closeOverlay('notifc');
+    }, true);
+  }
+
   /* ================= control centre ================= */
   openControlCenter() {
     if (this.overlays.cc) return this.closeOverlay('cc');
@@ -508,7 +580,7 @@ export class Desktop {
     delete this.overlays[k];
     if (k === 'launchpad') { el.classList.add('out'); setTimeout(() => el.remove(), 240); }
     else el.remove();
-    this._spotDismiss?.(); this._ccDismiss?.();
+    this._spotDismiss?.(); this._ccDismiss?.(); this._ncDismiss?.();
   }
   closeAllOverlays() { Object.keys(this.overlays).forEach(k => this.closeOverlay(k)); }
 

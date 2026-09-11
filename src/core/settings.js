@@ -32,8 +32,9 @@ export const DEFAULTS = {
   user: { name: 'Kullanıcı', avatar: '🧑‍🚀', password: '' },
   dock: { position: 'bottom', size: 52, magnify: true, autohide: false },
   desktop: { showIcons: true, showWidgets: true, gridSnap: true, jelly: true, jellyStrength: 1 },
-  system: { reduceMotion: false, sounds: true, brightness: 100, volume: 60 },
-  network: { wifi: true, bluetooth: false, airdrop: true, ssid: 'OpenOS-Net' },
+  system: { reduceMotion: false, sounds: true, brightness: 100, volume: 60, cursor: true },
+  network: { mode: 'ethernet', wifi: false, bluetooth: false, bluetoothAvailable: false,
+             airdrop: true, ssid: 'OpenOS-Net', link: '1 Gb/s' },
   focus: { dnd: false },
   agent: { enabled: true, allowFs: true, allowApps: true, allowScript: true, logCalls: true },
   cloud: {
@@ -56,6 +57,16 @@ export const DEFAULTS = {
     favorites: [],
   },
   privacy: { analytics: false, crashReports: false },
+  graphics: {
+    preset: 'balanced',        // battery | balanced | performance | quality
+    blur: 'full',              // off | low | full
+    shadows: 'full',           // off | flat | full
+    animations: 'full',        // off | fast | full
+    wallpaperFps: 15,          // 0 = donuk
+    transparency: true,
+    autoTune: true,            // kare hızı düşerse kaliteyi kendiliğinden düşür
+    persistedStorage: false,   // kalıcı depolama izni alındı mı
+  },
   pinned: ['finder', 'terminal', 'studio', 'notes', 'browser', 'settings'],
   desktopIcons: {},
 };
@@ -106,7 +117,8 @@ class Settings {
     this._save();
     this.bus.emit('change', path, value, prev);
     this.bus.emit(`change:${path}`, value, prev);
-    if (['theme', 'accent', 'system.reduceMotion', 'system.brightness'].includes(path)) this.apply();
+    if (['theme', 'accent', 'system.reduceMotion', 'system.brightness', 'system.cursor'].includes(path)
+        || path.startsWith('graphics.')) this.apply();
     return value;
   }
   patch(obj) { this.data = deepMerge(this.data, obj); this._save(); this.bus.emit('change', '*', obj); this.apply(); }
@@ -114,6 +126,19 @@ class Settings {
   get isDark() {
     const t = this.data.theme;
     return t === 'dark' || (t === 'auto' && this._mq.matches);
+  }
+
+  /** Grafik kalitesi ayarlarını kök sınıflara çevirir; CSS gerisini yapar. */
+  applyGraphics(root = document.documentElement) {
+    const g = this.data.graphics || {};
+    root.classList.toggle('gfx-blur-off', g.blur === 'off');
+    root.classList.toggle('gfx-blur-low', g.blur === 'low');
+    root.classList.toggle('gfx-shadow-off', g.shadows === 'off');
+    root.classList.toggle('gfx-shadow-flat', g.shadows === 'flat');
+    root.classList.toggle('gfx-anim-off', g.animations === 'off');
+    root.classList.toggle('gfx-anim-fast', g.animations === 'fast');
+    root.classList.toggle('gfx-opaque', g.transparency === false);
+    this.bus.emit('graphics', g);
   }
 
   /** Push the current settings into CSS custom properties / root attributes. */
@@ -128,6 +153,8 @@ class Settings {
     root.style.setProperty('--accent-fg', '#ffffff');
     root.style.setProperty('--dock-h', (this.data.dock.size + 18) + 'px');
     root.classList.toggle('reduce-motion', !!this.data.system.reduceMotion);
+    root.classList.toggle('os-cursor', this.data.system.cursor !== false);
+    this.applyGraphics(root);
     const b = (this.data.system.brightness ?? 100) / 100;
     const stage = document.getElementById('stage');
     if (stage) stage.style.filter = b < 1 ? `brightness(${0.35 + 0.65 * b})` : '';
