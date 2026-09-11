@@ -19,7 +19,7 @@ import clipboard from './clipboard.js';
 import pkg from './pkgmanager.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
-import { seedFilesystem, ensureTree } from './seed.js';
+import { seedFilesystem, ensureTree, seedGuide, KILAVUZ_YOLU } from './seed.js';
 import { thumb } from '../wallpapers/generator.js';
 import { COMPONENT_NAMES } from '../lang/runtime.js';
 
@@ -92,6 +92,9 @@ export class Kernel {
     this.bindContextMenu();
     this.startClocks();
     this.wirePackageManager();
+    /* Dil kılavuzu dosya sistemine alınır: `cat` ile okunabilsin, metin
+       düzenleyicide açılabilsin. Ağ olmadığında sessizce atlanır. */
+    seedGuide();
     this.loadUserApps();
 
     this.bus.emit('ready');

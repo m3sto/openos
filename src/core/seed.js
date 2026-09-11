@@ -353,6 +353,26 @@ export function seedFilesystem(user = 'user') {
 }
 
 /** Make sure the expected folders exist on an already-seeded install. */
+/**
+ * Dil kılavuzunu dosya sistemine kopyalar. Belge depoda tek bir kaynakta
+ * duruyor; sistem içinde `cat` ile okunabilmesi ve düzenleyicide
+ * açılabilmesi için oradan alınıp VFS'e yazılır. Her açılışta tazelenir ki
+ * depo güncellenince sistemdeki kopya eskimesin.
+ */
+export const KILAVUZ_YOLU = '/Applications/docs/OPENSHARP.md';
+
+export async function seedGuide() {
+  try {
+    const r = await fetch('docs/OPENSHARP.md', { cache: 'no-store' });
+    if (!r.ok) return false;
+    const metin = await r.text();
+    if (!metin.trim()) return false;
+    vfs.mkdir('/Applications/docs');
+    vfs.write(KILAVUZ_YOLU, metin);
+    return true;
+  } catch { return false; }
+}
+
 export function ensureTree(user = 'user') {
   const home = VFS.join('/Users', user);
   vfs.home = home;

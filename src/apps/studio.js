@@ -1426,14 +1426,35 @@ class Studio {
   }
 
   /* ============================ docs ============================ */
+  /** Kılavuzu metin düzenleyicide, Markdown önizlemesiyle açar. */
+  async kilavuzuAc() {
+    const yol = '/Applications/docs/OPENSHARP.md';
+    if (!vfs.exists(yol)) {
+      try {
+        const r = await fetch('docs/OPENSHARP.md', { cache: 'no-store' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        vfs.mkdir('/Applications/docs');
+        vfs.write(yol, await r.text());
+      } catch (e) {
+        notify.toast('Kılavuz bulunamadı: ' + e.message, { glyph: '⚠️' });
+        return;
+      }
+    }
+    this.ctx.openApp('texteditor', { path: yol });
+  }
+
   renderDocs() {
     clear(this.docs);
     const sec = (title, body) => h('div', { style: { marginBottom: '18px' } },
       h('div.k-sectitle', { text: title }), body);
     this.docs.append(
       h('div.k-text.t-title2', { text: 'OpenSharp' }),
-      h('div.k-text.t-callout', { style: { margin: '4px 0 16px' },
+      h('div.k-text.t-callout', { style: { margin: '4px 0 12px' },
         text: 'Durum (state), tepki veren bir görünüm (view) ve OS ile konuşan bir standart kütüphane.' }),
+      /* Buradaki özet hızlı bakmak için; dilin tamamı ayrı bir kılavuzda. */
+      h('button.k-btn.v-tinted.s-sm.full', { html: icon('fileText', 13), text: ' Tam dil kılavuzunu aç',
+        style: { marginBottom: '16px' },
+        onclick: () => this.kilavuzuAc() }),
       sec('Temeller', h('pre.st-code', { html: highlight(
 `# yorum satırı
 let ad = "Dünya"        # sabit değer
