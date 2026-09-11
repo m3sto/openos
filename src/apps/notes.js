@@ -58,7 +58,8 @@ class Notes {
         { label: 'Aç', run: () => this.open(n.path) },
         { label: 'Finder’da göster', run: () => this.ctx.openApp('finder', { path: this.dir }) },
         '-',
-        { label: 'Sil', danger: true, run: () => { vfs.remove(n.path); this.path = null; this.area.value = ''; this.refresh(); } },
+        { label: 'Çöp Kutusuna At', glyph: 'trash', danger: true,
+          run: () => { this.ctx.os.trash(n.path); this.path = null; this.area.value = ''; this.refresh(); } },
       ]);
       this.list.appendChild(item);
     }
@@ -94,7 +95,7 @@ class Notes {
   async remove() {
     if (!this.path) return;
     if (!(await notify.confirm('Bu not silinsin mi?', { title: VFS.basename(this.path), danger: true, ok: 'Sil' }))) return;
-    vfs.remove(this.path);
+    this.ctx.os.trash(this.path);
     this.path = null; this.area.value = '';
     this.refresh();
   }

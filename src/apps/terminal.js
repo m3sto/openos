@@ -272,7 +272,7 @@ export const CMDS = {
   help(t, a) {
     if (a && a.length) return CMDS.man(t, a);
     const groups = [
-      ['Dosya', 'ls cd pwd cat tree mkdir touch rm mv cp find grep stat du head tail wc sort uniq'],
+      ['Dosya', 'ls cd pwd cat tree mkdir touch rm trash mv cp find grep stat du head tail wc sort uniq'],
       ['Metin', 'echo json clip'],
       ['Sistem', 'clear whoami date uname neofetch uptime df history env which man exit'],
       ['Uygulama', 'apps open run ps kill'],
@@ -317,10 +317,50 @@ export const CMDS = {
   echo(t, a) { t.echo(a.join(' ')); },
   mkdir(t, a) { a.forEach(p => vfs.mkdir(t.path(p))); },
   touch(t, a) { a.forEach(p => { if (!vfs.exists(t.path(p))) vfs.write(t.path(p), ''); }); },
+  /**
+   * Varsayılan olarak çöp kutusuna taşır — kabukta yazılan bir komutun
+   * dosyayı geri dönüşsüz yok etmesi, yanlış yazılmış tek bir yolda veri
+   * kaybı demek. Kalıcı silmek `-f` ile açıkça istenir.
+   */
   rm(t, a) {
     const paths = a.filter(x => !x.startsWith('-'));
     if (!paths.length) throw new Error('rm: dosya adı gerekli');
-    paths.forEach(p => vfs.remove(t.path(p)));
+    const kalici = a.includes('-f') || a.includes('--force');
+    let n = 0;
+    for (const p of paths) {
+      const tam = t.path(p);
+      if (kalici) { vfs.remove(tam); n++; }
+      else { const k = vfs.trash(tam); if (k) n++; }
+    }
+    t.echo(kalici ? `${n} öğe kalıcı olarak silindi` : `${n} öğe çöp kutusuna taşındı  (kalıcı için: rm -f)`, 'dim');
+  },
+
+  /** trash — çöp kutusunu listeler, geri yükler, boşaltır. */
+  trash(t, a) {
+    const alt = a[0] || 'ls';
+    if (alt === 'ls' || alt === 'list') {
+      const liste = vfs.trashList();
+      if (!liste.length) return t.echo('çöp kutusu boş', 'dim');
+      return t.write(liste.map(k =>
+        `<span class="c-a">${escapeHtml(k.id)}</span>  ${escapeHtml(k.ad)}  ` +
+        `<span class="dim">${escapeHtml(VFS.dirname(k.eskiYol))}</span>`).join('<br>'));
+    }
+    if (alt === 'restore') {
+      if (!a[1]) return t.echo('kullanım: trash restore <id|all>', 'err');
+      if (a[1] === 'all') {
+        let n = 0;
+        for (const k of vfs.trashList()) { try { vfs.restore(k.id); n++; } catch {} }
+        return t.echo(`${n} öğe geri yüklendi`, 'ok');
+      }
+      try { t.echo('✓ ' + vfs.restore(a[1]), 'ok'); }
+      catch (e) { t.echo(e.message, 'err'); }
+      return;
+    }
+    if (alt === 'empty') {
+      const n = vfs.emptyTrash();
+      return t.echo(`${n} öğe kalıcı olarak silindi`, 'ok');
+    }
+    t.echo('trash ls | restore <id|all> | empty', 'dim');
   },
   mv(t, a) { if (a.length < 2) throw new Error('mv: kaynak ve hedef gerekli'); vfs.move(t.path(a[0]), t.path(a[1])); },
   cp(t, a) { if (a.length < 2) throw new Error('cp: kaynak ve hedef gerekli'); vfs.copy(t.path(a[0]), t.path(a[1])); },
@@ -777,6 +817,8 @@ export const MAN = {
   stat: 'Dosyanın boyutunu ve tarihlerini gösterir.',
   du: 'Klasörün kapladığı yeri hesaplar.',
   json: 'JSON dosyasını biçimli yazdırır.',
+  rm: 'Çöp kutusuna taşır. Kalıcı silmek için -f.',
+  trash: 'Çöp kutusu: trash ls | restore <id|all> | empty.',
   clip: 'Sistemin panosu: clip | clip set <metin> | clip history | clip clear.',
   env: 'Ortam bilgilerini listeler.',
   which: 'Bir komutun var olup olmadığını söyler.',

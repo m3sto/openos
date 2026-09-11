@@ -234,12 +234,45 @@ export class Kernel {
     return this.openApp(EXT_APP[s.ext] || 'texteditor', { path });
   }
 
+  /**
+   * Çöp kutusuna atar. Eski sürüm dosyayı taşıyor ama nereden geldiğini
+   * kaydetmiyordu; çöpteki bir şeyi geri koymanın yolu yoktu. Artık kayıt
+   * tutuluyor ve bildirimden tek tıkla geri alınabiliyor.
+   */
   trash(path) {
-    const trashDir = VFS.join(vfs.home, '.Trash');
-    vfs.mkdir(trashDir);
-    const dest = vfs.unique(VFS.join(trashDir, VFS.basename(path)));
-    vfs.move(path, dest);
-    notify.toast('Çöp kutusuna taşındı', { glyph: '🗑️' });
+    let kayit;
+    try { kayit = vfs.trash(path); }
+    catch (e) { notify.toast(e.message, { glyph: '⚠️' }); return null; }
+    if (!kayit) { notify.toast('Kalıcı olarak silindi', { glyph: '🗑️' }); return null; }
+
+    notify.post({
+      title: 'Çöp kutusuna taşındı',
+      body: kayit.ad,
+      glyph: 'trash',
+      timeout: 6000,
+      actions: [{ label: 'Geri al', run: () => {
+        try {
+          const yer = vfs.restore(kayit.id);
+          notify.toast(`Geri yüklendi: ${VFS.basename(yer)}`, { glyph: '↩️' });
+          this.bus.emit('fs:restored', yer);
+        } catch (e) { notify.toast(e.message, { glyph: '⚠️' }); }
+      } }],
+    });
+    return kayit;
+  }
+
+  /** Çöpü boşaltır — onay ister, geri dönüşü yoktur. */
+  async emptyTrash() {
+    const { adet } = vfs.trashUsage();
+    if (!adet) { notify.toast('Çöp kutusu zaten boş', { glyph: '🗑️' }); return false; }
+    const ok = await notify.confirm(
+      `${adet} öğe kalıcı olarak silinecek. Bu işlem geri alınamaz.`,
+      { title: 'Çöp Kutusunu Boşalt', ok: 'Boşalt', danger: true });
+    if (!ok) return false;
+    const n = vfs.emptyTrash();
+    notify.toast(`${n} öğe silindi`, { glyph: '🗑️' });
+    this.bus.emit('fs:trash');
+    return true;
   }
 
   recentApps() { return this.recent.map(id => registry.get(id)).filter(Boolean); }

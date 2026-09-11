@@ -251,6 +251,179 @@ export class VFS {
   }
 
   /** Unique path helper: /a/b.txt → /a/b 2.txt when taken. */
+  /* ---------------- yedekleme ----------------
+     Disk şifreli saklanıyor ve anahtar bu tarayıcıya bağlı; dışarı çıkma
+     yolu olmadan bu, veriyi tek bir tarayıcı profiline hapsetmek demek.
+     Yedek taşınabilir olmalı: düz, okunabilir, sürüm damgalı JSON. */
+
+  /**
+   * Diskin tamamını taşınabilir bir pakete çevirir.
+   * @param {{trashDahil?: boolean}} [o]
+   */
+  export(o = {}) {
+    const kok = o.trashDahil ? this.root : this._copSuz(this.root);
+    const kullanim = this.usage();
+    return {
+      bicim: 'openos-backup',
+      surum: 1,
+      olusturma: now(),
+      ev: this.home,
+      ozet: { dosya: kullanim.files, klasor: kullanim.dirs, bayt: kullanim.bytes },
+      agac: kok,
+    };
+  }
+
+  /** Çöp kutusunu ağaçtan ayıklar — yedeğe çöp taşımanın anlamı yok. */
+  _copSuz(node) {
+    const kopya = JSON.parse(JSON.stringify(node));
+    const parcalar = this.trashDir.split('/').filter(Boolean);
+    let n = kopya;
+    for (let i = 0; i < parcalar.length - 1; i++) {
+      n = n.c?.[parcalar[i]];
+      if (!n) return kopya;
+    }
+    if (n.c) delete n.c[parcalar[parcalar.length - 1]];
+    return kopya;
+  }
+
+  /**
+   * Yedeği geri yükler.
+   * @param {object} paket
+   * @param {{kip?: 'birlestir'|'degistir'}} [o]
+   *   birlestir — yedekteki dosyalar eklenir, var olanların üzerine yazılır
+   *   degistir  — disk tamamen yedekteki hâle döner
+   * @returns {{dosya:number, klasor:number}}
+   */
+  import(paket, o = {}) {
+    if (!paket || paket.bicim !== 'openos-backup') throw new Error('Bu bir OpenOS yedeği değil');
+    if (paket.surum !== 1) throw new Error(`Desteklenmeyen yedek sürümü: ${paket.surum}`);
+    if (!paket.agac || paket.agac.t !== 'd') throw new Error('Yedek bozuk: ağaç yok');
+
+    if (o.kip === 'degistir') {
+      this.root = JSON.parse(JSON.stringify(paket.agac));
+      this.persist();
+      this._touch('/', 'import');
+      const k = this.usage();
+      return { dosya: k.files, klasor: k.dirs };
+    }
+
+    let dosya = 0, klasor = 0;
+    const gez = (node, yol) => {
+      for (const ad in (node.c || {})) {
+        const c = node.c[ad];
+        const p = VFS.join(yol, ad);
+        if (c.t === 'd') { this.mkdir(p); klasor++; gez(c, p); }
+        else { this.write(p, c.b || '', c.meta); dosya++; }
+      }
+    };
+    gez(paket.agac, '/');
+    this.persist();
+    this._touch('/', 'import');
+    return { dosya, klasor };
+  }
+
+  /* ---------------- çöp kutusu ----------------
+     Silmek geri alınamazdı: `remove()` düğümü ağaçtan çıkarıyor, gidiyordu.
+     Gerçek bir işletim sistemi gibi, kullanıcı eliyle yapılan silmeler önce
+     çöp kutusuna taşınır; kalıcı silme ayrı ve açıkça istenen bir iştir. */
+
+  get trashDir() { return VFS.join(this.home, '.Trash'); }
+  get trashIndex() { return VFS.join(this.trashDir, '.index.json'); }
+
+  /** Çöpteki kayıtlar: nereden geldiği, ne zaman atıldığı. */
+  trashList() {
+    const kayitlar = this.readJSON(this.trashIndex, []) || [];
+    /* Dosyası elle silinmiş kayıtlar listede kalmasın. */
+    return kayitlar.filter(k => this.exists(VFS.join(this.trashDir, k.saklanan)));
+  }
+
+  _trashWrite(kayitlar) {
+    this.mkdir(this.trashDir);
+    this.writeJSON(this.trashIndex, kayitlar);
+  }
+
+  /**
+   * Bir yolu çöp kutusuna taşır.
+   * @returns {{id:string, ad:string, eskiYol:string}} geri yükleme kaydı
+   */
+  trash(path) {
+    const n = VFS.norm(path);
+    if (n === '/') throw new Error('Kök silinemez');
+    if (n === this.trashDir || n.startsWith(this.trashDir + '/')) {
+      /* Çöpün içindekini çöpe atmak anlamsız: kalıcı sil. */
+      return this.remove(n) && null;
+    }
+    const st = this.stat(n);
+    if (!st) throw new Error(`Yok: ${path}`);
+
+    this.mkdir(this.trashDir);
+    const id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const saklanan = id + '-' + VFS.basename(n);
+    this.move(n, VFS.join(this.trashDir, saklanan));
+
+    const kayit = {
+      id, saklanan, ad: st.name, eskiYol: n, tur: st.type,
+      boyut: st.size || 0, atildi: now(),
+    };
+    const kayitlar = this.trashList();
+    kayitlar.unshift(kayit);
+    this._trashWrite(kayitlar);
+    this._touch(n, 'trash');
+    return kayit;
+  }
+
+  /**
+   * Çöpten geri yükler. Eski yerinde aynı adla bir şey varsa yanına
+   * benzersiz bir adla konur — sessizce üzerine yazmak veri kaybettirir.
+   * @returns {string} geri yüklendiği yol
+   */
+  restore(id) {
+    const kayitlar = this.trashList();
+    const k = kayitlar.find(x => x.id === id);
+    if (!k) throw new Error('Çöpte böyle bir öğe yok');
+    const kaynak = VFS.join(this.trashDir, k.saklanan);
+    if (!this.exists(kaynak)) throw new Error('Çöpteki dosya bulunamadı');
+
+    this.mkdir(VFS.dirname(k.eskiYol));
+    const hedef = this.unique(k.eskiYol);
+    this.move(kaynak, hedef);
+    this._trashWrite(kayitlar.filter(x => x.id !== id));
+    this._touch(hedef, 'restore');
+    return hedef;
+  }
+
+  /** Tek bir öğeyi kalıcı siler. */
+  trashPurge(id) {
+    const kayitlar = this.trashList();
+    const k = kayitlar.find(x => x.id === id);
+    if (!k) return false;
+    try { this.remove(VFS.join(this.trashDir, k.saklanan)); } catch {}
+    this._trashWrite(kayitlar.filter(x => x.id !== id));
+    return true;
+  }
+
+  /** Çöpü boşaltır. @returns {number} silinen öğe sayısı */
+  emptyTrash() {
+    const kayitlar = this.trashList();
+    for (const k of kayitlar) {
+      try { this.remove(VFS.join(this.trashDir, k.saklanan)); } catch {}
+    }
+    this._trashWrite([]);
+    this._touch(this.trashDir, 'trash-empty');
+    return kayitlar.length;
+  }
+
+  /** Çöpteki toplam boyut — Dock ve Depolama bunu gösterir. */
+  trashUsage() {
+    let bayt = 0;
+    for (const k of this.trashList()) {
+      const y = VFS.join(this.trashDir, k.saklanan);
+      try { this.walk(y, st => { if (st.type === 'file') bayt += st.size || 0; }); } catch {}
+      if (k.tur === 'file') { const st = this.stat(y); if (st) bayt += st.size || 0; }
+    }
+    return { adet: this.trashList().length, bayt };
+  }
+
   unique(path) {
     if (!this.exists(path)) return path;
     const dir = VFS.dirname(path), base = VFS.basename(path);

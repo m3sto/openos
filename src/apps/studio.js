@@ -623,7 +623,7 @@ class Studio {
           '-',
           { label: 'Sil', danger: true, run: async () => {
             if (await notify.confirm(`${f.name} silinsin mi?`, { title: 'Sil', danger: true, ok: 'Sil' })) {
-              vfs.remove(f.path); this.renderExplorer();
+              this.ctx.os.trash(f.path); this.renderExplorer();
             } } },
         ]);
         this.explorer.appendChild(row);

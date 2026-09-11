@@ -55,6 +55,91 @@ class Storage {
     return { bytes, files, dirs, newest };
   }
 
+  /**
+   * Yedeği bir dosya olarak indirir. Tarayıcının indirme akışı kullanılır;
+   * yedek düz JSON'dur ki başka bir cihazda okunabilsin.
+   */
+  yedekAl() {
+    let paket;
+    try { paket = vfs.export(); }
+    catch (e) { return notify.toast('Yedek alınamadı: ' + e.message, { glyph: '⚠️' }); }
+
+    const metin = JSON.stringify(paket);
+    const tarih = new Date().toISOString().slice(0, 10);
+    const ad = `openos-${tarih}.osbackup`;
+    const blob = new Blob([metin], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = h('a', { href: url, download: ad });
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+
+    /* Ana bilgisayara inen dosyanın yanında sanal diske de bir kopya bırakılır:
+       indirme engellenmiş olsa bile yedek kaybolmasın. */
+    try {
+      const klasor = VFS.join(vfs.home, 'İndirilenler');
+      vfs.mkdir(klasor);
+      vfs.write(VFS.join(klasor, ad), metin);
+    } catch {}
+
+    notify.post({
+      title: 'Yedek alındı',
+      body: `${paket.ozet.dosya} dosya · ${fmtBytes(metin.length)} · ${ad}`,
+      glyph: 'save',
+      actions: [{ label: 'İndirilenler', run: () => this.ctx.openApp('finder', { path: VFS.join(vfs.home, 'İndirilenler') }) }],
+    });
+  }
+
+  /** Yedek dosyasını seçtirir ve kipi sorar. */
+  yedektenYukle() {
+    const secici = h('input', { type: 'file', accept: '.osbackup,.json,application/json',
+      style: { display: 'none' } });
+    document.body.appendChild(secici);
+    on(secici, 'change', async () => {
+      const dosya = secici.files?.[0];
+      secici.remove();
+      if (!dosya) return;
+
+      let paket;
+      try { paket = JSON.parse(await dosya.text()); }
+      catch { return notify.toast('Dosya okunamadı ya da geçerli JSON değil', { glyph: '⚠️' }); }
+      if (paket?.bicim !== 'openos-backup') {
+        return notify.toast('Bu bir OpenOS yedeği değil', { glyph: '⚠️' });
+      }
+
+      const ozet = paket.ozet || {};
+      const ne = `${ozet.dosya ?? '?'} dosya · ${fmtBytes(ozet.bayt || 0)} · ` +
+                 `${new Date(paket.olusturma).toLocaleString('tr-TR')}`;
+      const secim = await notify.choose(
+        `Yedek: ${ne}\n\nBirleştirmek yedektekileri ekler ve aynı adlıların üzerine yazar. ` +
+        `Değiştirmek diskteki her şeyi siler ve yedeğin aynısını kurar.`,
+        { title: 'Yedekten geri yükle', glyph: '💾', root: this.el, buttons: [
+          { label: 'Birleştir', value: 'birlestir', variant: 'primary' },
+          { label: 'Diski Değiştir', value: 'degistir', variant: 'danger' },
+          { label: 'Vazgeç', value: null },
+        ] });
+      if (!secim) return;
+
+      if (secim === 'degistir') {
+        const ok = await notify.confirm(
+          'Diskteki bütün dosyalar silinecek ve yerine yedektekiler konacak. Bu işlem geri alınamaz.',
+          { title: 'Emin misiniz?', ok: 'Diski Değiştir', danger: true, root: this.el });
+        if (!ok) return;
+      }
+
+      try {
+        const r = vfs.import(paket, { kip: secim });
+        notify.post({ title: 'Yedek geri yüklendi',
+          body: `${r.dosya} dosya, ${r.klasor} klasör`, glyph: 'check' });
+        this.refresh?.();
+        this.render?.();
+      } catch (e) {
+        notify.toast('Geri yüklenemedi: ' + e.message, { glyph: '⚠️' });
+      }
+    });
+    secici.click();
+  }
+
   render() {
     const total = this.measure('/');
     let top = [];
@@ -105,6 +190,21 @@ class Storage {
           onclick: () => { this.root = VFS.dirname(this.root); this.render(); } }) : null,
         h('button.k-btn.s-sm', { html: icon('refresh', 13), text: ' Tara', onclick: () => this.render() })),
       map,
+      h('div.k-sectitle', { text: 'Yedekleme' }),
+      h('div.k-group',
+        h('div.k-row',
+          h('span.ic', { html: icon('save', 15), style: { color: 'var(--accent)' } }),
+          h('div', { style: { flex: 1 } },
+            h('div.k-text', { text: 'Diskin yedeğini al' }),
+            h('div.k-text.t-caption', {
+              text: 'Disk bu tarayıcıya bağlı bir anahtarla şifreli. Yedek taşınabilir bir dosyadır: başka bir tarayıcıda ya da başka bir makinede geri yüklenebilir.' })),
+          h('button.k-btn.s-sm', { text: 'Yedek Al', onclick: () => this.yedekAl() })),
+        h('div.k-row',
+          h('span.ic', { html: icon('upload', 15), style: { color: 'var(--orange, #ff9f0a)' } }),
+          h('div', { style: { flex: 1 } },
+            h('div.k-text', { text: 'Yedekten geri yükle' }),
+            h('div.k-text.t-caption', { text: 'Birleştir: yedektekiler eklenir. Değiştir: disk tamamen yedeğe döner.' })),
+          h('button.k-btn.s-sm', { text: 'Dosya Seç…', onclick: () => this.yedektenYukle() }))),
       h('div.k-sectitle', { text: 'Güvenlik' }),
       h('div.k-group',
         h('div.k-row',

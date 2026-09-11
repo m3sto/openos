@@ -151,7 +151,8 @@ class Camera {
         title: s.name, onclick: () => this.ctx.openPath(s.path) });
       contextMenu(t, () => [
         { label: 'Aç', run: () => this.ctx.openPath(s.path) },
-        { label: 'Sil', danger: true, run: () => { vfs.remove(s.path); this.renderStrip(); } },
+        { label: 'Çöp Kutusuna At', glyph: 'trash', danger: true,
+          run: () => { this.ctx.os.trash(s.path); this.renderStrip(); } },
       ]);
       this.strip.appendChild(t);
     });
@@ -308,7 +309,7 @@ class Recorder {
           h('div.k-text.t-caption', { text: `${fmtBytes(f.size)} · ${relTime(f.modified, 'tr')}` })),
         audio,
         h('button.k-btn.v-ghost.icon.s-sm', { html: icon('trash', 13),
-          onclick: () => { vfs.remove(f.path); this.renderList(); } }));
+          onclick: () => { this.ctx.os.trash(f.path); this.renderList(); } }));
       this.list.appendChild(row);
     });
   }

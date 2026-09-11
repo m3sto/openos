@@ -2,7 +2,7 @@
    OpenOS · apps/finder.js — the file manager
    ========================================================================== */
 
-import { h, clear, add, on, fmtBytes, debounce } from '../core/util.js';
+import { h, clear, add, on, fmtBytes, debounce, relTime } from '../core/util.js';
 import { icon } from '../core/icons.js';
 import { menu, contextMenu } from '../ui/menu.js';
 import vfs, { VFS } from '../core/vfs.js';
@@ -113,14 +113,91 @@ class Finder {
   back() { if (this.hi > 0) { this.hi--; this.goto(this.history[this.hi], true); } }
   forward() { if (this.hi < this.history.length - 1) { this.hi++; this.goto(this.history[this.hi], true); } }
 
+  get copteMi() { return this.path === vfs.trashDir; }
+
   refresh() {
     this.backBtn.disabled = this.hi <= 0;
     this.fwdBtn.disabled = this.hi >= this.history.length - 1;
     this.sidebar.querySelectorAll('.sb-item').forEach(i => i.classList.toggle('on', i.dataset.path === this.path));
     this.renderPath();
+    /* Çöp kutusu ham klasör içeriği olarak gösterilemez: dosyalar orada
+       çarpıtılmış adlarla duruyor ve asıl bilgi — nereden geldikleri —
+       dizinde. Bu klasör kendi görünümünü alır. */
+    if (this.copteMi) { this.copuCiz(); return; }
+    this.copBar?.remove(); this.copBar = null;
     let items = [];
     try { items = vfs.list(this.path); } catch { items = []; }
     this.renderItems(items);
+  }
+
+  /** Çöp kutusu görünümü: nereden geldiği, ne zaman atıldığı, geri yükle. */
+  copuCiz() {
+    const kayitlar = vfs.trashList();
+
+    if (!this.copBar) {
+      this.copBar = h('div.fx-trashbar');
+      this.grid.parentElement.insertBefore(this.copBar, this.grid);
+    }
+    clear(this.copBar);
+    const { bayt } = vfs.trashUsage();
+    this.copBar.append(
+      h('span', { html: icon('trash', 14) }),
+      h('span.k-text.t-caption', { text: kayitlar.length
+        ? `${kayitlar.length} öğe · ${fmtBytes(bayt)}`
+        : 'Çöp kutusu boş' }),
+      h('div.k-spacer'),
+      kayitlar.length ? h('button.k-btn.s-sm', { text: 'Tümünü Geri Yükle',
+        onclick: () => {
+          let n = 0;
+          for (const k of vfs.trashList()) { try { vfs.restore(k.id); n++; } catch {} }
+          notify.toast(`${n} öğe geri yüklendi`, { glyph: '↩️' });
+          this.refresh();
+        } }) : null,
+      kayitlar.length ? h('button.k-btn.v-danger.s-sm', { text: 'Boşalt',
+        onclick: async () => { if (await this.ctx.os.emptyTrash()) this.refresh(); } }) : null,
+    );
+
+    clear(this.grid);
+    this.grid.className = 'k-scroll fx-list';
+    if (!kayitlar.length) {
+      this.grid.appendChild(h('div.k-empty',
+        h('div.glyph', { html: icon('trash', 28), style: { color: 'var(--text-3)' } }),
+        h('div.k-text.t-callout', { text: 'Çöp kutusu boş' })));
+      this.status.textContent = '0 öğe';
+      return;
+    }
+
+    for (const k of kayitlar) {
+      const satir = h('div.fx-item.fx-trash-item',
+        h('div.ic', { html: icon(k.tur === 'dir' ? 'folder' : 'file', 18) }),
+        h('div.nm', { text: k.ad }),
+        h('div.fx-trash-from.ellipsis', { text: VFS.dirname(k.eskiYol).replace(vfs.home, '~') }),
+        h('div.fx-trash-when', { text: relTime(k.atildi) }),
+        h('button.k-btn.v-ghost.s-sm', { html: icon('undo', 13), title: 'Geri yükle',
+          onclick: e => {
+            e.stopPropagation();
+            try {
+              const yer = vfs.restore(k.id);
+              notify.toast(`Geri yüklendi: ${VFS.basename(yer)}`, { glyph: '↩️' });
+            } catch (err) { notify.toast(err.message, { glyph: '⚠️' }); }
+            this.refresh();
+          } }),
+      );
+      contextMenu(satir, () => [
+        { header: k.ad },
+        { label: 'Geri Yükle', glyph: 'undo', run: () => { try { vfs.restore(k.id); } catch {} this.refresh(); } },
+        { label: 'Eski yerini aç', glyph: 'folder',
+          run: () => this.goto(VFS.dirname(k.eskiYol)) },
+        '-',
+        { label: 'Kalıcı Olarak Sil', glyph: 'x', danger: true, run: async () => {
+          const ok = await notify.confirm(`“${k.ad}” kalıcı olarak silinsin mi?`,
+            { title: 'Kalıcı sil', ok: 'Sil', danger: true });
+          if (ok) { vfs.trashPurge(k.id); this.refresh(); }
+        } },
+      ]);
+      this.grid.appendChild(satir);
+    }
+    this.status.textContent = `${kayitlar.length} öğe · ${fmtBytes(bayt)}`;
   }
 
   renderPath() {
