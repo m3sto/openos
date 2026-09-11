@@ -1093,3 +1093,9 @@ mark.ob-hit { background: var(--yellow); color: #000; border-radius: 2px; }
 .ide-pkg-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .ide-side.gizli { display: none; }
 .ide-search-head .yer { font-size: 10px; color: var(--text-3); font-weight: 400; flex: 0 0 auto; }
+
+/* Terminalin kendi satır seçimi (⌘⇧↑/↓ ile işaretlenir). */
+.term-out > .secili {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  border-radius: 3px;
+}

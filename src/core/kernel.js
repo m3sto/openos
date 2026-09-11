@@ -16,6 +16,7 @@ import { installTextControls } from '../ui/textfield.js';
 import { openFile, saveFile } from '../ui/filedialog.js';
 import { paketOku, paketMi } from '../lang/package.js';
 import clipboard from './clipboard.js';
+import pkg from './pkgmanager.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
 import { seedFilesystem, ensureTree } from './seed.js';
@@ -90,6 +91,7 @@ export class Kernel {
     this.bindShortcuts();
     this.bindContextMenu();
     this.startClocks();
+    this.wirePackageManager();
     this.loadUserApps();
 
     this.bus.emit('ready');
@@ -102,6 +104,9 @@ export class Kernel {
     }, 900);
     if (firstRun) setTimeout(() => this.openApp('welcome'), 1600);
   }
+
+  /** Paket yöneticisi kurulum için çekirdeğe ihtiyaç duyar. */
+  wirePackageManager() { pkg.kernel = this; this.pkg = pkg; }
 
   mountDesktop() {
     this.desktop?.destroy();
