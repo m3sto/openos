@@ -191,11 +191,13 @@ export class Win {
         this.el.classList.remove('dragging');
         this.wm.hideSnapHint();
         if (moved) {
-          /* Öteleme gerçek konuma yazılır, transform sıfırlanır. */
+          /* Önce kalıcı konum yazılır, hemen ardından öteleme sıfırlanır.
+             İkisi aynı görevde olduğu için tarayıcı tek kare boyar: pencere
+             bırakıldığı yerde kalır, sıçrama olmaz. */
           this.x = ox + dx;
           this.y = Math.max(MENUBAR, oy + dy);
-          this.jelly.clearOffset();
           this.place();
+          this.jelly.clearOffset();
           const z = this.wm.snapZone(x, y);
           if (z) this.wm.applySnap(this, z);
           else this.clampIntoView();
@@ -232,6 +234,10 @@ export class Win {
 
   clampIntoView() {
     const vw = this.wm.layer.clientWidth, vh = this.wm.layer.clientHeight;
+    /* Katman ölçülemiyorsa (sekme gizli, panel kapalı) sınırlar ters döner:
+       clamp alt sınırı üst sınırdan büyük olur ve pencere köşeye fırlar.
+       Ölçü yoksa konuma hiç dokunulmaz. */
+    if (vw < 120 || vh < 120) return;
     this.x = clamp(this.x, -this.w + 90, vw - 90);
     this.y = clamp(this.y, MENUBAR, vh - 40);
     this.place();
@@ -414,6 +420,9 @@ export class WindowManager {
   /* ---------------- snapping ---------------- */
   snapZone(x, y) {
     const vw = this.layer.clientWidth, vh = this.layer.clientHeight;
+    /* Ölçülemeyen katmanda her nokta sağ kenarın ötesinde sayılır ve pencere
+       kendiliğinden yapışır; ölçü yoksa yapışma bölgesi de yoktur. */
+    if (vw < 120 || vh < 120) return null;
     if (y <= MENUBAR + EDGE) return 'top';
     if (x <= EDGE) return y > vh * 0.62 ? 'bl' : (y < vh * 0.38 ? 'tl' : 'left');
     if (x >= vw - EDGE) return y > vh * 0.62 ? 'br' : (y < vh * 0.38 ? 'tr' : 'right');

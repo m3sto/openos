@@ -33,6 +33,18 @@
 .win.minimizing { transition: transform .35s var(--ease-in), opacity .35s var(--ease-in); opacity: 0; }
 .win.no-anim { animation: none; }
 .win.dragging, .win.resizing { transition: none; }
+
+/* Sürüklerken pahalı bileşikleme işleri askıya alınır. Hareket eden bir
+   katmanın içindeki `backdrop-filter`, pencere her piksel kaydığında arka
+   planın yeniden bulanıklaştırılmasını gerektirir; büyük bir pencerede bu
+   tek başına kare süresini kat kat artırır ve pencere imlecin gerisinden
+   sürüklenir. Bırakınca saniyesinde geri gelir. */
+.win.dragging, .win.dragging *,
+.win.resizing, .win.resizing * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.win.dragging .win-bar, .win.resizing .win-bar { background: var(--surface); }
 .win.maxed { border-radius: 0; }
 .win.snapping { transition: left .2s var(--spring), top .2s var(--spring), width .2s var(--spring), height .2s var(--spring); }
 

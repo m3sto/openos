@@ -144,7 +144,12 @@ export class Jelly {
     this.offset.x = x; this.offset.y = y;
     if (!this.running) this.apply();
   }
-  clearOffset() { this.offset.x = this.offset.y = 0; }
+  /** Ötelemeyi sıfırlar VE ekrana yansıtır; yoksa eski transform üzerinde
+      kalır ve pencere, kalıcı konumuyla toplanıp yerinden oynamış görünür. */
+  clearOffset() {
+    this.offset.x = this.offset.y = 0;
+    this.apply();
+  }
 
   /* ---------------------------------------------------------------- döngü */
   start() {
@@ -188,18 +193,35 @@ export class Jelly {
   }
 
   apply() {
+    const deforme = this.corners.some(c => Math.abs(c.x.x) > 0.05 || Math.abs(c.y.x) > 0.05);
+    const oteleme = this.offset.x || this.offset.y;
+
+    /* Hiçbir şey yoksa `transform` tamamen kaldırılır. Kimlik matrisi bile
+       bırakılmamalı: pencereyi ayrı bir birleştirme katmanında tutar ve
+       içindeki çapraz kaynaklı çerçeve boyanmaz. */
+    if (!deforme && !oteleme) {
+      if (this.el.style.transform) this.el.style.transform = '';
+      this.el.style.transformOrigin = '';
+      return;
+    }
+
+    const t = oteleme ? `translate3d(${this.offset.x}px, ${this.offset.y}px, 0)` : '';
+
+    /* Yalnızca öteleme varsa ne matris hesabı yapılır ne de ölçü okunur.
+       `offsetWidth` okumak zorunlu yerleşim hesabı tetikler; sürüklemenin
+       sıcak yolunda her imleç olayında bunu yapmak, pencerenin imlecin
+       arkasından sürüklenmesinin başlıca sebebiydi. */
+    if (!deforme) { this.el.style.transform = t; return; }
+
     const w = this.el.offsetWidth, h = this.el.offsetHeight;
-    if (!w || !h) return;
+    if (!w || !h) { this.el.style.transform = t; return; }
     const src = [[0, 0], [w, 0], [w, h], [0, h]];
-    /* Köşe sapmalarını pencere içinde kalacak biçimde sınırla. */
     const lim = Math.min(w, h) * 0.32;
     const dst = src.map((p, i) => [
       p[0] + clamp(this.corners[i].x.x, -lim, lim),
       p[1] + clamp(this.corners[i].y.x, -lim, lim),
     ]);
     const m = homography(src, dst);
-    const t = (this.offset.x || this.offset.y)
-      ? `translate3d(${this.offset.x}px, ${this.offset.y}px, 0)` : '';
     this.el.style.transform = m ? `${t} matrix3d(${m.map(n => +n.toFixed(6)).join(',')})` : t;
   }
 
