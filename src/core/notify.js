@@ -98,6 +98,26 @@ class Notifier {
     ), root);
   }
 
+  /**
+   * Üç (ya da daha çok) seçenekli soru. `confirm` iki yola zorluyordu;
+   * "kaydetmeden kapat" ile "hiç kapatma" farklı şeyler ve kullanıcının
+   * ikisini de görebilmesi gerekiyor.
+   * @param {string} message
+   * @param {{title?:string, glyph?:string, root?:Element,
+   *          buttons:{label:string, value:any, variant?:string}[]}} o
+   */
+  choose(message, { title = 'OpenOS', glyph = '❔', buttons = [], root } = {}) {
+    return this._modal(finish => h('div.k-alert',
+      h('div.glyph', { text: glyph }),
+      h('div.k-text.t-title2', { text: title }),
+      message ? h('div.k-text.t-callout', { text: message, style: { marginTop: '5px' } }) : null,
+      h('div.acts', { style: { flexDirection: buttons.length > 2 ? 'column' : 'row' } },
+        ...buttons.map(b => h('button.k-btn.s-lg', {
+          class: b.variant ? 'v-' + b.variant : '', text: b.label, onclick: () => finish(b.value),
+        }))),
+    ), root);
+  }
+
   prompt(message, { title = 'OpenOS', value = '', placeholder = '', ok = 'Tamam', cancel = 'Vazgeç', glyph = '✏️', root } = {}) {
     return this._modal(finish => {
       const input = h('input', { value, placeholder, onkeydown: e => { if (e.key === 'Enter') finish(input.value); } });

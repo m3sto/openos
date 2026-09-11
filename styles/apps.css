@@ -136,6 +136,42 @@ html[data-theme="light"] .c-op { color: #c92a2a; }
 
 /* ---------------- Text editor ---------------- */
 .txt-wrap { flex: 1; min-height: 0; display: flex; }
+/* Bölünmüş önizlemede kaynak ve çıktı yan yana, aralarında ince bir çizgi. */
+.txt-wrap.bolunmus .txt-preview {
+  max-width: none; margin: 0; flex: 1 1 50%;
+  box-shadow: inset .5px 0 0 var(--hairline);
+}
+.txt-wrap.bolunmus .txt-area { flex: 1 1 50%; }
+
+/* Satır numaraları: metin alanıyla aynı satır yüksekliği ve dolgu. */
+.txt-gutter {
+  flex: 0 0 auto; min-width: 42px; padding: 18px 8px 18px 0;
+  text-align: right; overflow: hidden;
+  font-family: var(--mono); font-size: 13px; line-height: 1.65;
+  color: var(--text-3); background: var(--surface-2);
+  box-shadow: inset -.5px 0 0 var(--hairline-soft);
+  user-select: none;
+}
+
+/* Bul ve Değiştir çubuğu */
+/* `display: flex` sınıf kuralı, tarayıcının `[hidden] { display: none }`
+   kuralını özgüllükle yeniyor; gizleme açıkça yazılmalı. */
+.txt-find[hidden] { display: none; }
+.txt-find {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+  padding: 7px 11px; background: var(--surface-2);
+  box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+  animation: os-fade-in .14s var(--ease);
+}
+.txt-find-count {
+  font-size: 11px; color: var(--text-3); min-width: 36px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.txt-find-count.yok { color: var(--red); font-weight: 600; }
+
+.tb-sep { width: 1px; height: 18px; background: var(--hairline); flex: 0 0 auto; }
+.statusbar .nokta { opacity: .45; }
+.txt-dirty { color: var(--accent); font-weight: 600; margin-left: auto; }
 .txt-area {
   flex: 1; border: 0; outline: none; resize: none; padding: 18px 22px;
   font-family: var(--mono); font-size: 13px; line-height: 1.65;

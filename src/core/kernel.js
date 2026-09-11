@@ -13,6 +13,7 @@ import { Desktop } from '../ui/desktop.js';
 import { menu } from '../ui/menu.js';
 import { upgradeScrollers } from '../ui/scroller.js';
 import { installTextControls } from '../ui/textfield.js';
+import { openFile, saveFile } from '../ui/filedialog.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
 import { seedFilesystem, ensureTree } from './seed.js';
@@ -191,6 +192,10 @@ export class Kernel {
       close: () => win.close(),
       openApp: (id, a, n) => this.openApp(id, a, n),
       openPath: p => this.openPath(p),
+      /* Sistem dosya kutuları. Pencere kendiliğinden bağlanır, böylece kutu
+         hangi uygulamanın dosya istediğini gösteren bir sayfa olarak iner. */
+      openFile: (o = {}) => openFile({ win, ...o }),
+      saveFile: (o = {}) => saveFile({ win, ...o }),
       version: VERSION, codename: CODENAME,
     };
   }
