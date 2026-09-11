@@ -16,6 +16,9 @@ import notify from '../core/notify.js';
 import vfs, { VFS } from '../core/vfs.js';
 
 export const OPENBROW_VERSION = '1.0';
+/* Sayfa motorunun adresi bir uygulama ayrıntısıdır; arayüzde hiçbir yerde
+   görünmez ve değiştirilemez. */
+const OPENBROW_ENGINE = 'https://openbrow-proxy.m3sto-wolfly.workers.dev';
 export const OPENBROW_UA =
   'Mozilla/5.0 (OpenOS 1.0; Meridian; rv:1.0) AppleWebKit/605.1.15 (KHTML, like Gecko) OpenBrow/1.0 Safari/605.1.15';
 
@@ -82,7 +85,7 @@ class OpenBrow {
     this.newTabBtn = h('button.ob-newtab.no-drag', { html: icon('plus', 14), title: 'Yeni sekme (⌘T)',
       onclick: () => this.newTab(settings.get('browser.homepage'), { focus: true }) });
     const win = this.ctx.win;
-    win.el.classList.add('tabbed');
+    win.el.classList.add('tabbed', 'webview-host');
     win.bar.classList.add('tall');
     win.titleEl.style.display = 'none';          /* başlık metni yok, sekmeler var */
     win.bar.insertBefore(this.tabstrip, win.trail);
@@ -171,7 +174,6 @@ class OpenBrow {
         { label: `OpenBrow ${OPENBROW_VERSION} Hakkında`, glyph: 'compass', run: () => this.go('openos://openbrow') },
         { label: 'Tarayıcı Ayarları', glyph: 'settings', run: () => this.go('openos://browser-settings') },
         '-',
-        { label: `Motor: ${this.engineLabel()}`, disabled: true },
       ] },
     ];
   }
@@ -193,6 +195,8 @@ class OpenBrow {
 
   closeTab(tab) {
     if (!tab) return;
+    tab.abort?.abort();
+    clearTimeout(tab.timer);
     const i = this.tabs.indexOf(tab);
     tab.pane.remove();
     this.tabs.splice(i, 1);
@@ -302,18 +306,12 @@ class OpenBrow {
     const e = ENGINES[settings.get('browser.search')] || ENGINES.duckduckgo;
     return e.url(q);
   }
-  engineLabel() {
-    const mode = settings.get('browser.engine');
-    const proxy = settings.get('browser.proxy');
-    if (mode === 'direct') return 'doğrudan çerçeve';
-    if (proxy) return `OpenBrow Proxy (${new URL(proxy).host})`;
-    return 'doğrudan çerçeve — proxy tanımlı değil';
-  }
+  engineLabel() { return 'OpenBrow motoru'; }
+
+  /* Sayfa motoru her zaman devrededir — kapatılabilir olması, sitelerin
+     yarısının açılmaması demekti. Adres kullanıcıya gösterilmez. */
   proxied(url) {
-    const mode = settings.get('browser.engine');
-    const proxy = (settings.get('browser.proxy') || '').replace(/\/+$/, '');
-    if (mode === 'direct' || !proxy) return null;
-    return `${proxy}/?url=${encodeURIComponent(url)}`;
+    return `${OPENBROW_ENGINE}/?url=${encodeURIComponent(url)}`;
   }
 
   go(input, { tab = this.active, push = true } = {}) {
@@ -348,63 +346,80 @@ class OpenBrow {
       return;
     }
 
-    const proxyUrl = this.proxied(url);
-    tab.engine = proxyUrl ? 'proxy' : 'direct';
+    /* Sayfa çerçeveye adresle değil `srcdoc` ile verilir.
+       Nedeni ölçülerek bulundu: adresle verildiğinde çerçeve ayrı bir süreçte
+       (OOPIF) çalışıyor ve sayfada herhangi bir `backdrop-filter` bulunduğunda
+       Chromium bu çerçeveyi hiç boyamıyor — yükleniyor, load olayı tetikleniyor,
+       başlığı geliyor, ama bembeyaz kalıyor. OpenOS'un her yerinde cam yüzey
+       olduğu için bu, tarayıcının hiç çalışmaması demekti. HTML'i kendimiz
+       getirip srcdoc'a yazınca çerçeve aynı süreçte kalıyor, sorun tümden
+       kalkıyor ve sayfa bir tur daha hızlı geliyor.
+       `allow-same-origin` bilerek verilmiyor: belge opak kaynak alır, yani
+       sayfa OpenOS'un DOM'una ya da depolamasına erişemez. */
+    tab.engine = 'engine';
     const frame = h('iframe.ob-frame', {
-      src: proxyUrl || url,
-      sandbox: 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads',
+      sandbox: 'allow-scripts allow-forms',
       referrerpolicy: 'no-referrer',
       allow: 'clipboard-write; fullscreen',
     });
     tab.frame = frame;
     frame.style.zoom = (settings.get('browser.zoom') || 100) / 100;
 
-    const veil = h('div.ob-loading', h('div.ob-spin.big'), h('div', { text: hostOf(url) }));
+    const note = h('div', { text: hostOf(url) });
+    const veil = h('div.ob-loading', h('div.ob-spin.big'), note);
     tab.pane.append(frame, veil);
-    this.setProgress(45);
+    this.setProgress(30);
 
+    /* Örtü, kare gerçekten boyanana kadar durur. Daha önce sabit bir süre
+       sonunda kaldırılıyordu; ağır sayfalarda bu, içerik gelene kadar bembeyaz
+       bir çerçeve göstermek demekti. */
     let settled = false;
+    const t0 = performance.now();
+    const ticker = setInterval(() => {
+      const sec = (performance.now() - t0) / 1000;
+      this.setProgress(Math.min(92, 30 + sec * 14));
+      if (sec > 3) note.textContent = `${hostOf(url)} — yükleniyor (${sec.toFixed(0)} sn)`;
+    }, 400);
+
     const settle = (ok) => {
       if (settled) return;
       settled = true;
+      clearInterval(ticker);
+      clearTimeout(tab.timer);
       tab.loading = false;
       veil.remove();
       this.setProgress(100);
-      if (tab.engine === 'direct' && ok) tab.title = hostOf(url);
+      if (ok) tab.title = tab.title || hostOf(url);
       this.renderTabs();
       if (!ok) tab.pane.appendChild(this.blockedNotice(tab, url));
-      else { this.recordHistory(tab); }
+      else this.recordHistory(tab);
       this.syncChrome();
     };
-    on(frame, 'load', () => settle(true));
+    on(frame, 'load', () => { if (frame.srcdoc) settle(true); });
     on(frame, 'error', () => settle(false));
-    /* A frame refused by X-Frame-Options never fires load in most engines. */
-    tab.timer = setTimeout(() => {
-      if (!settled && tab.engine === 'direct') settle(false);
-      else settle(true);
-    }, 6500);
+    tab.timer = setTimeout(() => settle(false), 25000);
+
+    /* HTML'i motordan getir, sonra çerçeveye yaz. */
+    tab.abort?.abort();
+    tab.abort = new AbortController();
+    fetch(this.proxied(url), { signal: tab.abort.signal })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); this.setProgress(70); return r.text(); })
+      .then(html => { if (tab.url === url) frame.srcdoc = html; })
+      .catch(e => { if (e.name !== 'AbortError') settle(false); });
 
     if (!tab.title || tab.title === 'Yeni Sekme') tab.title = hostOf(url);
     this.renderTabs();
   }
 
   blockedNotice(tab, url) {
-    const proxy = settings.get('browser.proxy');
     return h('div.ob-blocked',
       h('div.ob-blocked-card',
         h('div.ob-blocked-glyph', { html: icon('shield', 30) }),
-        h('div.k-text.t-title2', { text: 'Bu site çerçevelenmeyi reddediyor' }),
-        h('div.k-text.t-callout', { style: { maxWidth: '420px' },
-          text: `${hostOf(url)} sunucusu X-Frame-Options / CSP başlıklarıyla gömülmeyi engelliyor. ` +
-                (proxy ? 'OpenBrow Proxy etkin ama yanıt vermedi.'
-                       : 'OpenBrow Proxy tanımlarsanız OpenBrow sayfayı kendi motoruyla açar, ' +
-                         'site de kendisini OpenOS üzerinde çalışan OpenBrow’da sanır.') }),
+        h('div.k-text.t-title2', { text: 'Sayfa açılamadı' }),
+        h('div.k-text.t-callout', { style: { maxWidth: '430px' },
+          text: `${hostOf(url)} yanıt vermedi ya da içeriği reddetti. Adresi denetleyip yeniden deneyin.` }),
         h('div.k-hstack', { style: { gap: '8px', marginTop: '14px', justifyContent: 'center' } },
-          proxy
-            ? h('button.k-btn.v-primary.s-sm', { text: 'Proxy ile tekrar dene',
-                onclick: () => { settings.set('browser.engine', 'auto'); this.reload(); } })
-            : h('button.k-btn.v-primary.s-sm', { text: 'Proxy ayarla',
-                onclick: () => this.go('openos://browser-settings') }),
+          h('button.k-btn.v-primary.s-sm', { text: 'Yeniden dene', onclick: () => this.reload() }),
           h('button.k-btn.s-sm', { text: 'Adresi kopyala',
             onclick: () => { navigator.clipboard?.writeText(url); notify.toast('Kopyalandı', { glyph: '📋' }); } }))));
   }
@@ -433,7 +448,7 @@ class OpenBrow {
     this.field.querySelector('.ob-btn.small').innerHTML = icon('star', 14);
     this.field.querySelector('.ob-btn.small').classList.toggle('on', marked);
     this.statusbar.textContent =
-      `${t.engine === 'proxy' ? 'OpenBrow motoru (proxy)' : t.engine === 'internal' ? 'OpenOS dahili sayfa' : 'Doğrudan çerçeve'} · ` +
+      `${t.engine === 'internal' ? 'OpenOS dahili sayfa' : 'OpenBrow motoru'} · ` +
       `${this.tabs.length} sekme · ${settings.get('browser.zoom')}%`;
   }
 
@@ -551,9 +566,7 @@ class OpenBrow {
                         : 'Kaynak yok', { title: 'Kaynağı Göster', glyph: '📄' });
       return;
     }
-    const proxy = this.proxied(t.url);
-    if (!proxy) { notify.toast('Kaynak görüntüleme proxy gerektirir', { glyph: '⚠️' }); return; }
-    fetch(proxy.replace('/?url=', '/raw?url=')).then(r => r.text()).then(src => {
+    fetch(this.proxied(t.url).replace('/?url=', '/raw?url=')).then(r => r.text()).then(src => {
       const dir = VFS.join(vfs.home, 'İndirilenler'); vfs.mkdir(dir);
       const p = vfs.unique(VFS.join(dir, hostOf(t.url) + '.html'));
       vfs.write(p, src);
@@ -720,7 +733,7 @@ class OpenBrow {
 
   destroy() {
     const win = this.ctx.win;
-    win.el.classList.remove('tabbed');
+    win.el.classList.remove('tabbed', 'webview-host');
     win.bar.classList.remove('tall');
     if (win.titleEl) win.titleEl.style.display = '';
     this.tabstrip?.remove();
@@ -804,8 +817,6 @@ const INTERNAL = {
     render(br) {
       const rows = [
         ['Sürüm', `OpenBrow ${OPENBROW_VERSION}`],
-        ['Motor', br.engineLabel()],
-        ['Kullanıcı aracısı', OPENBROW_UA],
         ['İşletim sistemi', `OpenOS ${br.ctx.version} “${br.ctx.codename}”`],
         ['Arama motoru', (ENGINES[settings.get('browser.search')] || ENGINES.duckduckgo).name],
         ['Yer imleri', String(br.bookmarks.length)],
@@ -826,9 +837,6 @@ const INTERNAL = {
       const wrap = h('div.br-wrap');
       const group = (title, ...rows) => wrap.append(
         h('div.k-sectitle', { text: title, style: { marginTop: '16px' } }), h('div.k-group', ...rows));
-
-      const proxyInput = h('input', { value: settings.get('browser.proxy'), placeholder: 'https://openbrow-proxy.<hesap>.workers.dev' });
-      on(proxyInput, 'change', () => { settings.set('browser.proxy', proxyInput.value.trim()); br.syncChrome(); });
 
       const homeInput = h('input', { value: settings.get('browser.homepage') });
       on(homeInput, 'change', () => settings.set('browser.homepage', homeInput.value.trim()));
@@ -856,15 +864,7 @@ const INTERNAL = {
         return t;
       };
 
-      wrap.appendChild(hero('Tarayıcı Ayarları', 'OpenBrow motoru ve gizlilik', 'settings'));
-      group('Motor',
-        row('bolt', 'var(--blue)', 'Sayfa motoru', 'Proxy, siteleri OpenOS kimliğiyle açar ve çerçeveleme engellerini kaldırır',
-          seg([['auto', 'Otomatik'], ['proxy', 'Proxy'], ['direct', 'Doğrudan']],
-            settings.get('browser.engine'), v => settings.set('browser.engine', v))),
-        row('cloud', 'var(--indigo)', 'OpenBrow Proxy', 'Cloudflare Worker adresi',
-          h('div.k-field', { style: { width: '300px' } }, proxyInput)),
-        row('robot', 'var(--purple)', 'OpenOS kimliği gönder', 'navigator.userAgent → OpenBrow', toggle('browser.spoofUA')),
-      );
+      wrap.appendChild(hero('Tarayıcı Ayarları', 'Gezinme ve gizlilik', 'settings'));
       group('Gezinme',
         row('search', 'var(--green)', 'Arama motoru', null,
           seg(Object.entries(ENGINES).map(([k, v]) => [k, v.name]),
@@ -879,7 +879,6 @@ const INTERNAL = {
         row('star', 'var(--yellow)', 'Yer imleri', `${br.bookmarks.length} kayıt`,
           h('button.k-btn.s-sm', { text: 'Göster', onclick: () => br.go('openos://bookmarks') })),
       );
-      wrap.appendChild(h('div.br-doc', { html: markdown(PROXY_MD) }));
       return wrap;
     },
   },
@@ -1009,21 +1008,6 @@ Proxy tanımlı değilse OpenBrow doğrudan çerçeveleme yapar; bu durumda ço�
 büyük site kendini göstermeyi reddeder ve OpenBrow bunu açıkça bildirir.
 `;
 
-const PROXY_MD = `
-### Proxy'yi kurmak
-
-Depodaki \`cloud/openbrow-proxy.js\` dosyası tek dosyalık bir Cloudflare
-Worker'ıdır:
-
-\`\`\`
-npx wrangler deploy cloud/openbrow-proxy.js --name openbrow-proxy \\
-    --compatibility-date 2026-01-01
-\`\`\`
-
-Çıkan adresi yukarıdaki **OpenBrow Proxy** alanına yapıştırın. Ücretsiz planda
-günde 100.000 istek yeterlidir. Proxy yalnızca sayfaları getirir; hiçbir veri
-saklamaz.
-`;
 
 const ABOUT_MD = `
 OpenOS; pencere yöneticisi, dosya sistemi, uygulama kaydı ve kendi programlama

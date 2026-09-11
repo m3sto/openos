@@ -157,20 +157,34 @@ export class Jelly {
         if (!c.x.still || !c.y.still) moving = true;
       }
       this.apply();
-      if (!moving && !this.dragging) {
-        this.running = false;
-        this.corners.forEach(c => { c.x.reset(); c.y.reset(); });
-        this.apply();
-        if (!this.offset.x && !this.offset.y) {
-          this.el.style.transform = '';
-          this.el.style.transformOrigin = '';
-          this.el.classList.remove('jelly');
-        }
-        return;
-      }
+      if (!moving && !this.dragging) { this.settleNow(); return; }
       this.raf = requestAnimationFrame(tick);
     };
     this.raf = requestAnimationFrame(tick);
+
+    /* Emniyet: sekme arka plandayken requestAnimationFrame durur, dolayısıyla
+       yukarıdaki temizlik hiç çalışmayabilir. O durumda pencerede `jelly`
+       sınıfı ve onunla gelen `will-change: transform` kalıcı olur; pencere
+       sürekli ayrı bir birleştirme katmanına yükseltilir ve yuvarlak köşeli,
+       kırpılmış bu katmanın içindeki çapraz kaynaklı <iframe> hiç boyanmaz —
+       tarayıcı penceresi bembeyaz görünür. Zamanlayıcı arka planda da işler. */
+    clearTimeout(this.safety);
+    this.safety = setTimeout(() => { if (!this.dragging) this.settleNow(); }, 1400);
+  }
+
+  /** Yayları sıfırlar ve pencereyi düz, katmansız hâline döndürür. */
+  settleNow() {
+    cancelAnimationFrame(this.raf);
+    clearTimeout(this.safety);
+    this.running = false;
+    this.corners.forEach(c => { c.x.reset(); c.y.reset(); });
+    if (this.offset.x || this.offset.y) {
+      this.el.style.transform = `translate3d(${this.offset.x}px, ${this.offset.y}px, 0)`;
+    } else {
+      this.el.style.transform = '';
+      this.el.style.transformOrigin = '';
+    }
+    this.el.classList.remove('jelly');
   }
 
   apply() {
@@ -190,12 +204,9 @@ export class Jelly {
   }
 
   destroy() {
-    cancelAnimationFrame(this.raf);
-    this.running = false;
     this.dragging = false;
-    this.el.style.transform = '';
-    this.el.style.transformOrigin = '';
-    this.el.classList.remove('jelly');
+    this.offset.x = this.offset.y = 0;
+    this.settleNow();
   }
 }
 

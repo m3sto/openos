@@ -280,7 +280,7 @@ class Store {
     const row = (label, control) => h('div.k-row',
       h('div.k-text.t-secondary', { text: label, style: { width: '120px', flex: '0 0 auto' } }), control);
 
-    const target = st.signedIn ? `OpenOS Cloud (@${st.user.handle})` : `GitHub · ${cloud.repo}@${cloud.branch}`;
+    const target = st.signedIn ? `OpenOS Cloud (@${st.user.handle})` : 'GitHub hesabınız';
     const status = h('div.k-text.t-caption');
     const go = h('button.k-btn.v-primary.s-lg', { html: icon('upload', 14), text: ' Yayınla' });
 
@@ -352,31 +352,22 @@ class Store {
       this.body.appendChild(this.authForm());
     }
 
-    /* ---- endpoints ---- */
-    const endpointF = h('input', { value: settings.get('cloud.endpoint'), placeholder: 'https://openos-cloud.<hesap>.workers.dev' });
-    on(endpointF, 'change', () => { settings.set('cloud.endpoint', endpointF.value.trim()); cloud.catalog = null; this.render(); });
-    const repoF = h('input', { value: settings.get('cloud.repo'), placeholder: 'kullanici/openos-cloud' });
-    on(repoF, 'change', () => { settings.set('cloud.repo', repoF.value.trim()); cloud.catalog = null; this.refreshCatalog(); });
-    const branchF = h('input', { value: settings.get('cloud.branch'), style: { width: '100px' } });
-    on(branchF, 'change', () => settings.set('cloud.branch', branchF.value.trim() || 'main'));
-    const tokenF = h('input', { type: 'password', value: settings.get('cloud.token'), placeholder: 'github_pat_…' });
-    on(tokenF, 'change', () => { settings.set('cloud.token', tokenF.value.trim()); this.render(); });
-
+    /* Sunucu adresi, depo ve belirteç artık arayüzde yok: bunlar
+       uygulamanın kendi ayrıntılarıdır, kullanıcının ayarlayacağı şey değil. */
     this.body.append(
-      h('div.k-sectitle', { text: 'Bağlantılar' }),
+      h('div.k-sectitle', { text: 'Durum' }),
       h('div.k-group',
-        this.fieldRow('cloud', 'var(--teal)', 'Cloud API', 'Cloudflare Worker adresi', endpointF),
-        this.fieldRow('package', 'var(--purple)', 'GitHub deposu', 'Katalog ve uygulama kaynakları', repoF),
-        this.fieldRow('layers', 'var(--gray)', 'Dal', null, branchF),
-        this.fieldRow('lock', 'var(--red)', 'GitHub belirteci', 'Yalnızca bu tarayıcıda saklanır', tokenF)),
+        this.infoRow('cloud', 'var(--teal)', 'Mağaza',
+          ({ cloud: 'OpenOS Cloud’a bağlı', github: 'Yedek katalog', offline: 'Çevrimdışı — yerleşik katalog' })[st.mode]),
+        this.infoRow('package', 'var(--purple)', 'Katalog', `${this.catalog.length} uygulama`),
+        this.infoRow('upload', 'var(--orange)', 'Yayınlama',
+          st.signedIn ? 'hesabınızla açık' : 'giriş yapınca açılır')),
       h('div.k-hstack', { style: { gap: '8px', marginTop: '12px', flexWrap: 'wrap' } },
-        h('button.k-btn.s-sm', { html: icon('check', 13), text: ' Bağlantıyı sına', onclick: () => this.testConnection() }),
-        h('button.k-btn.s-sm', { html: icon('package', 13), text: ' Depoyu hazırla', onclick: () => this.initRepo() }),
-        h('button.k-btn.s-sm', { html: icon('refresh', 13), text: ' Katalogu yenile', onclick: () => this.refreshCatalog() }),
-        h('button.k-btn.v-ghost.s-sm', { html: icon('question', 13), text: ' Kurulum rehberi',
-          onclick: () => this.ctx.openApp('browser', { url: 'openos://about' }) })),
-      h('div.as-status', { text: statusText(st) }),
-      h('div.st-code', { text: SETUP_STEPS }));
+        h('button.k-btn.s-sm', { html: icon('refresh', 13), text: ' Katalogu yenile',
+          onclick: () => this.refreshCatalog() }),
+        h('button.k-btn.v-ghost.s-sm', { html: icon('globe', 13), text: ' Web panosu',
+          onclick: () => this.ctx.openApp('browser', { url: 'https://m3sto.github.io/openos-cloud/' }) })),
+    );
   }
 
   infoRow(glyph, tint, title, sub) {
@@ -438,35 +429,6 @@ class Store {
         h('div.k-row', h('div.k-text.t-secondary', { text: 'Şifre', style: { width: '120px' } }), h('div.k-field', pass)),
         handleRow),
       h('div.k-hstack', { style: { gap: '8px' } }, submit, toggle, h('div.k-spacer'), msg));
-  }
-
-  async testConnection() {
-    const lines = [];
-    if (cloud.hasApi) {
-      try { const r = await fetch(cloud.endpoint + '/v1/apps'); lines.push(`Cloud API: ${r.ok ? 'çalışıyor' : 'HTTP ' + r.status}`); }
-      catch (e) { lines.push('Cloud API: ulaşılamadı — ' + e.message); }
-    } else lines.push('Cloud API: tanımlı değil');
-
-    const gh = cloud.github();
-    if (gh.configured) {
-      try {
-        const me = await gh.whoami();
-        const info = await gh.repoInfo();
-        lines.push(`GitHub: @${me.login} · ${info.full} · yazma ${info.canPush ? 'var' : 'YOK'}`);
-      } catch (e) { lines.push('GitHub: ' + e.message); }
-    } else lines.push('GitHub: depo ya da belirteç eksik');
-    notify.alert(lines.join('\n'), { title: 'Bağlantı sınaması', glyph: '🔌' });
-  }
-
-  async initRepo() {
-    const gh = cloud.github();
-    if (!gh.configured) { notify.alert('Önce depo ve belirteç girin.', { title: 'Eksik yapılandırma', glyph: '⚠️' }); return; }
-    try {
-      const r = await gh.initStore({ title: 'OpenOS Cloud App Store' });
-      notify.alert(r.created ? 'catalog.json ve README oluşturuldu.' : `Depo zaten hazır (${r.apps} uygulama).`,
-        { title: 'Depo hazır', glyph: '📦' });
-      this.refreshCatalog();
-    } catch (e) { notify.alert(e.message, { title: 'Hazırlanamadı', glyph: '⚠️' }); }
   }
 
   /* ---------------- grid ---------------- */
@@ -563,28 +525,4 @@ const previewCard = (form) => h('div.as-card',
 const errorCard = (msg) => h('div.k-card', { style: { color: 'var(--red)' } },
   h('div.k-text', { text: '⚠︎ ' + msg }));
 
-const statusText = (st) => {
-  const bits = [`Katalog: ${({ cloud: 'OpenOS Cloud', github: 'GitHub', offline: 'yerleşik' })[st.mode]}`];
-  if (st.api) bits.push(`API: ${st.api}`);
-  if (st.repo) bits.push(`Depo: ${st.repo}`);
-  bits.push(`Yayınlama: ${st.signedIn ? 'Cloud hesabı' : st.github ? 'GitHub belirteci' : 'kapalı'}`);
-  if (st.error) bits.push(`Son hata: ${st.error}`);
-  return bits.join(' · ');
-};
 
-const SETUP_STEPS = `# 1) Mağaza deposu (yalnızca GitHub ile yayınlayacaksanız)
-#    GitHub'da boş bir depo açın:  openos-cloud
-#    Ayarlar → GitHub deposu alanına "kullanici/openos-cloud" yazın
-#    Fine-grained token: Contents → Read and write (yalnızca bu depo)
-#    "Depoyu hazırla" düğmesi catalog.json'ı oluşturur
-
-# 2) OpenOS Cloud API'si (hesaplar + yüklemeler)
-npx wrangler d1 create openos-cloud
-npx wrangler d1 execute openos-cloud --file cloud/schema.sql --remote
-npx wrangler secret put JWT_SECRET
-npx wrangler deploy            # cloud/wrangler.toml içinden
-#    Çıkan adresi yukarıdaki "Cloud API" alanına yapıştırın
-
-# 3) OpenBrow proxy'si (tarayıcının gerçek siteleri açması için)
-npx wrangler deploy cloud/openbrow-proxy.js --name openbrow-proxy \\
-    --compatibility-date 2026-01-01`;

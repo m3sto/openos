@@ -4,17 +4,21 @@
 
 | Konu | Değer |
 | --- | --- |
-| Biçim | PNG-24, saydam arkaplan (alpha) |
-| Boyut | **1024 × 1024** (sistem gerisini kendi ölçekler) |
-| Dosya adı | `<id>.png` — aşağıdaki tablodaki **id** birebir |
-| Konum | `assets/icons/apps/<id>.png` |
+| Biçim | WebP (tercih) ya da PNG-24, saydam arkaplan |
+| Boyut | **384 × 384** yeterli (en büyük gösterim Dock hover ≈ 107 px, 2x'te 214 px) |
+| Dosya adı | `<id>.webp` ya da `<id>.png` — aşağıdaki tablodaki **id** birebir |
+| Konum | `assets/icons/apps/` |
 | Şekil | macOS squircle (superellipse), kenar yarıçapı ≈ %22.5 |
 | Güvenli alan | Kenarlardan **%8** boşluk bırakın; simge dock'ta kırpılmaz |
 | Gölge | Gömmeyin — sistem kendi gölgesini ekler |
 | Parlaklık | Üstten alta hafif ışık geçişi iyi durur (iOS/macOS dili) |
 
-Dosyayı klasöre koyduğunuz anda sistem otomatik olarak PNG'yi kullanır;
-PNG yoksa yerleşik SVG simgeye düşer. Yeniden başlatma gerekmez.
+Sistem sırayla `<id>.webp`, sonra `<id>.png` arar; ikisi de yoksa yerleşik SVG
+simgeye düşer. Yeniden başlatma gerekmez.
+
+**Kaynak levha:** `assets/icons/sheet.png` (1536×1024, 10×6 ızgara). Simgeler
+bu levhadan ölçülerek kesildi; levhayı güncellerseniz aynı yöntemle yeniden
+üretilebilirler.
 
 İsteğe bağlı: `<id>@dark.png` koyarsanız koyu temada o kullanılır.
 

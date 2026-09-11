@@ -177,7 +177,7 @@
 .k-list { display: flex; flex-direction: column; }
 .k-list .item {
   display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: var(--r-sm);
-  cursor: default; transition: background var(--t-fast);
+  cursor: inherit; transition: background var(--t-fast);
 }
 .k-list .item:hover { background: var(--hairline-soft); }
 .k-list .item.sel  { background: var(--accent); color: var(--accent-fg); }
@@ -227,7 +227,7 @@
 }
 .k-menu .mi {
   display: flex; align-items: center; gap: 9px; height: 26px; padding: 0 9px;
-  border-radius: 6px; cursor: default; white-space: nowrap;
+  border-radius: 6px; cursor: inherit; white-space: nowrap;
 }
 .k-menu .mi:hover:not(.disabled):not(.sep) { background: var(--accent); color: var(--accent-fg); }
 .k-menu .mi.disabled { opacity: .4; }

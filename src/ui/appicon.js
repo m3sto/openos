@@ -10,11 +10,16 @@ import { icon, hasIcon } from '../core/icons.js';
 import settings from '../core/settings.js';
 
 const BASE = 'assets/icons/apps/';
-/** id → 'png' | 'glyph'  (probed once, then remembered for the session) */
+/** id → çözülmüş url | 'glyph'  (oturum başına bir kez yoklanır) */
 const known = new Map();
 
-export function iconUrl(id, dark = settings.isDark) {
-  return BASE + encodeURIComponent(id) + (dark ? '@dark' : '') + '.png';
+/* WebP önce denenir: aynı görselin PNG'sinden ~7 kat küçük ve bu sistemi
+   çalıştırabilen her tarayıcı destekler. PNG ikinci sırada kalır, böylece
+   klasöre elle bırakılan PNG'ler de çalışır. */
+const EXTS = ['.webp', '.png'];
+
+export function iconUrl(id, ext = '.webp', dark = false) {
+  return BASE + encodeURIComponent(id) + (dark ? '@dark' : '') + ext;
 }
 
 /**
@@ -49,25 +54,23 @@ export function appIcon(app, size = 52, opts = {}) {
 
   const state = known.get(app.id);
   if (state === 'glyph' || !app.id) { drawGlyph(); return box; }
-  if (state === 'png') { drawPng(iconUrl(app.id)); return box; }
+  if (state) { drawPng(state); return box; }
 
-  /* unknown yet — show the glyph, probe in the background, upgrade on success */
+  /* Henüz bilinmiyor: önce glif çizilir, adaylar sırayla yoklanır ve ilk
+     yüklenen görsel glifin yerini alır — böylece hiç boş kare görünmez. */
   drawGlyph();
-  const probe = new Image();
-  const url = iconUrl(app.id);
-  probe.onload = () => { known.set(app.id, 'png'); drawPng(url); };
-  probe.onerror = () => {
-    if (settings.isDark) {                 /* a dark variant is optional */
-      const light = new Image();
-      const lurl = iconUrl(app.id, false);
-      light.onload = () => { known.set(app.id, 'png'); drawPng(lurl); };
-      light.onerror = () => known.set(app.id, 'glyph');
-      light.src = lurl;
-      return;
-    }
-    known.set(app.id, 'glyph');
+  const candidates = [];
+  if (settings.isDark) EXTS.forEach(e => candidates.push(iconUrl(app.id, e, true)));
+  EXTS.forEach(e => candidates.push(iconUrl(app.id, e, false)));
+
+  const tryNext = (i) => {
+    if (i >= candidates.length) { known.set(app.id, 'glyph'); return; }
+    const probe = new Image();
+    probe.onload = () => { known.set(app.id, candidates[i]); drawPng(candidates[i]); };
+    probe.onerror = () => tryNext(i + 1);
+    probe.src = candidates[i];
   };
-  probe.src = url;
+  tryNext(0);
   return box;
 }
 

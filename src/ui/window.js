@@ -36,6 +36,14 @@ export class Win {
     this.jelly = new Jelly(this.el);
     wm.attach(this);
     if (Jelly.enabled) setTimeout(() => this.jelly.pulse(9), 60);
+    /* Emniyet: pencere durağana geçtiğinde üzerinde hiçbir dönüşüm kalmamalı —
+       kalırsa içindeki çapraz kaynaklı çerçeve boyanmaz. */
+    setTimeout(() => {
+      if (!this.el.classList.contains('dragging') && !this.el.classList.contains('jelly')) {
+        this.el.style.transform = '';
+        this.el.style.transformOrigin = '';
+      }
+    }, 1800);
   }
 
   build() {
@@ -146,7 +154,9 @@ export class Win {
     const relX = (e.clientX - this.x) / this.w;
     let lastDx = 0, lastDy = 0, rebased = false;
     this.el.classList.add('dragging');
-    this.jelly.grab((e.clientX - this.x) / this.w, (e.clientY - this.y) / this.h);
+    /* Sürükleme sırasında bilerek hiç deformasyon yok: pencere imlecin altında
+       birebir durur. Eğriltme uygulandığında pencere dönüyormuş ve imlecin
+       arkasından geliyormuş gibi görünüyordu. */
 
     drag(e, {
       cursor: 'default',
@@ -172,7 +182,6 @@ export class Win {
         const offX = ox + dx - this.x;
         const offY = Math.max(MENUBAR, oy + dy) - this.y;
         this.jelly.setOffset(offX, offY);
-        this.jelly.move(dx - lastDx, dy - lastDy);
         lastDx = dx; lastDy = dy;
 
         const z = this.wm.snapZone(x, y);
@@ -193,7 +202,6 @@ export class Win {
         } else {
           this.jelly.clearOffset();
         }
-        this.jelly.release();
       },
     });
   }
@@ -205,13 +213,9 @@ export class Win {
     const o = { x: this.x, y: this.y, w: this.w, h: this.h };
     const min = { w: this.app.minWidth || 320, h: this.app.minHeight || 200 };
     this.el.classList.add('resizing');
-    this.jelly.grab(dir.includes('w') ? 1 : dir.includes('e') ? 0 : 0.5,
-                    dir.includes('n') ? 1 : dir.includes('s') ? 0 : 0.5);
-    let lrx = 0, lry = 0;
+
     drag(e, {
       onMove: ({ dx, dy }) => {
-        this.jelly.move((dx - lrx) * 0.5, (dy - lry) * 0.5);
-        lrx = dx; lry = dy;
         let { x, y, w, h: hh } = o;
         if (dir.includes('e')) w = Math.max(min.w, o.w + dx);
         if (dir.includes('s')) hh = Math.max(min.h, o.h + dy);
@@ -221,7 +225,6 @@ export class Win {
       },
       onEnd: () => {
         this.el.classList.remove('resizing');
-        this.jelly.release();
         this.wm.bus.emit('resized', this);
       },
     });

@@ -80,7 +80,6 @@ export default {
 
     return new HTMLRewriter()
       .on('head', new HeadInjector(finalUrl, proxyBase))
-      .on('a[href]', new LinkRewriter(finalUrl))
       .on('form', new FormMarker(finalUrl))
       .transform(new Response(upstream.body, { status: upstream.status, headers }));
   },
@@ -93,16 +92,6 @@ class HeadInjector {
     this.done = true;
     el.prepend(`<base href="${escapeAttr(this.url.origin + this.url.pathname)}">`, { html: true });
     el.append(`<script>${shim(this.url.toString(), this.proxyBase)}</script>`, { html: true });
-  }
-}
-
-class LinkRewriter {
-  constructor(url) { this.url = url; }
-  element(el) {
-    const href = el.getAttribute('href') || '';
-    if (/^(javascript:|mailto:|tel:|#)/i.test(href)) return;
-    try { el.setAttribute('data-openbrow-href', new URL(href, this.url).toString()); } catch {}
-    el.setAttribute('target', '_self');
   }
 }
 
@@ -149,7 +138,7 @@ function shim(pageUrl, proxyBase) {
   document.addEventListener('click', function(e){
     var a = e.target && e.target.closest && e.target.closest('a');
     if (!a) return;
-    var href = a.getAttribute('data-openbrow-href') || a.href;
+    var href = a.href;   /* tarayıcı <base>'e göre zaten mutlaklaştırdı */
     if (!href || /^(javascript:|mailto:|tel:|#)/i.test(href)) return;
     e.preventDefault();
     post({ type: 'navigate', url: href, newTab: e.metaKey || e.ctrlKey || a.target === '_blank' });
@@ -182,6 +171,16 @@ function shim(pageUrl, proxyBase) {
            image: img, text: String(getSelection() || '') });
   }, true);
   window.open = function(u){ post({ type: 'navigate', url: String(u), newTab: true }); return null; };
+
+  /* Üst çerçeveye yönlendirme zaten sandbox ile engelli. location üzerine
+     yazmak sayfanın kendi betiklerini bozduğu için bilerek yapılmıyor;
+     yalnızca _top/_parent hedefli bağlantılar OpenBrow'a çevriliyor. */
+  document.addEventListener('click', function(e){
+    var a = e.target && e.target.closest && e.target.closest('a[target="_top"], a[target="_parent"]');
+    if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    post({ type: 'navigate', url: a.href });
+  }, true);
   var PB = ${JSON.stringify(proxyBase)};
   window.__openbrowProxy = PB;
 })();`;

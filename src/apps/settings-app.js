@@ -169,8 +169,6 @@ class SettingsApp {
         this.toggle('system.reduceMotion')),
       this.row('volume', 'var(--pink)', 'Arayüz sesleri', 'Tıklama ve uyarı sesleri',
         this.toggle('system.sounds')),
-      this.row('compass', 'var(--indigo)', 'OpenOS imleci', 'Sistemin kendi çizdiği imleç takımı',
-        this.toggle('system.cursor')),
     );
     this.group('Oturum',
       this.row('lock', 'var(--gray)', 'Ekranı kilitle', 'Ctrl/⌘ + L',
@@ -367,8 +365,6 @@ class SettingsApp {
     );
 
     this.group('Bağlantı',
-      this.row('cloud', 'var(--teal)', 'Sunucu', settings.get('cloud.endpoint') || 'tanımlı değil',
-        h('button.k-btn.s-sm', { text: 'Değiştir', onclick: () => this.ctx.openApp('cloud', { pane: 'server' }) })),
       this.row('globe', 'var(--purple)', 'Web panosu', 'm3sto.github.io/openos-cloud',
         h('button.k-btn.s-sm', { text: 'Aç',
           onclick: () => this.ctx.openApp('browser', { url: 'https://m3sto.github.io/openos-cloud/' }) })),
