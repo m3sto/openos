@@ -101,6 +101,31 @@ app {
   height:  560
   author:  "Mesto"
   about:   "Basit ve hızlı görev listesi."
+  permissions: ["fs", "net"]    # istediği erişimler — aşağıya bakın
+}
+```
+
+### İzinler
+
+Bir uygulama dosyalara, ağa ya da başka uygulamalara erişmek için izin
+ister. Bildirmezseniz uygulamanız dosya ve uygulama iznini alır ama **ağ
+iznini almaz** — ağ, verinin dışarı çıkabildiği tek kapı olduğu için açıkça
+istenmeli.
+
+| İzin | Ne açar | İzinsiz ne olur |
+|---|---|---|
+| `"fs"` | `fs_*`, `dialog_*`, `path_*` | Çağrı hata fırlatır |
+| `"net"` | `http_get`, `http_json`, `http_post` | Çağrı hata fırlatır |
+| `"apps"` | `os_open` | Çağrı hata fırlatır |
+
+Kullanıcı **Ayarlar → Uygulamalar → İzinler**'den istediği an kapatabilir,
+o yüzden izin gerektiren her çağrıyı `try`/`catch` ile sarın:
+
+```opensharp
+try {
+  http_get(url, fn(v, k) { … })
+} catch e {
+  toast("Ağ izni kapalı: ${e.message}")
 }
 ```
 

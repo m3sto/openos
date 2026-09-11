@@ -16,6 +16,7 @@ import registry from './registry.js';
 import notify from './notify.js';
 import settings from './settings.js';
 import { paketOku, paketMi, paketYaz, manifestiDenetle, kimlikYap, PAKET_UZANTISI } from '../lang/package.js';
+import permissions from './permissions.js';
 
 export const UYGULAMALAR = '/Applications';
 
@@ -174,6 +175,7 @@ class PackageManager {
     }
 
     registry.unregister(id);
+    permissions.forget(id);
     const pinned = (settings.get('pinned') || []).filter(p => p !== id);
     settings.set('pinned', pinned);
 

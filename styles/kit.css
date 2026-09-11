@@ -442,3 +442,13 @@
   flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
   padding: 10px 12px; box-shadow: inset 0 .5px 0 var(--hairline-soft);
 }
+
+/* İçerik ağırlıklı kutu. `k-alert` camdır ve küçük bir uyarı için doğrudur;
+   satır satır denetim taşıyan bir panelde arkadaki içerik okunurluğu
+   bozuyor. Bu türevi düz zemin kullanır. */
+.k-alert.k-sheet {
+  background: var(--surface);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-pop), 0 0 0 .5px var(--hairline);
+}
+.k-alert.k-sheet .k-group { background: var(--surface-2); }

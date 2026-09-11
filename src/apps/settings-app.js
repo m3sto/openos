@@ -8,6 +8,7 @@ import { contextMenu } from '../ui/menu.js';
 import settings, { ACCENTS } from '../core/settings.js';
 import vfs, { VFS } from '../core/vfs.js';
 import registry from '../core/registry.js';
+import permissions, { IZINLER } from '../core/permissions.js';
 import notify from '../core/notify.js';
 import cloud from '../core/cloud.js';
 import { WALLPAPERS, thumb } from '../wallpapers/generator.js';
@@ -398,11 +399,75 @@ class SettingsApp {
     if (user.length) this.group('OpenSharp uygulamaları', ...user.map(a =>
       this.row(a.glyph, `linear-gradient(150deg, ${a.tint[0]}, ${a.tint[1]})`, a.name, a.source,
         h('div.k-hstack', { style: { gap: '6px' } },
+          h('button.k-btn.s-sm', { html: icon('lock', 12), text: ' İzinler',
+            onclick: () => this.izinPaneli(a) }),
           h('button.k-btn.s-sm', { text: 'Düzenle', onclick: () => this.ctx.openApp('studio', { path: a.source }) }),
           h('button.k-btn.s-sm.v-danger', { text: 'Kaldır', onclick: () => this.ctx.os.uninstallApp(a.id) })))));
+
+    /* İzin özeti: hangi uygulamanın neye eriştiği tek bakışta görünsün.
+       Bu liste olmadan izinler vardı ama kimse nerede olduklarını bilmiyordu. */
+    if (user.length) {
+      this.group('Erişim özeti', ...user.map(a => {
+        const izin = permissions.get(a.id);
+        const acik = IZINLER.filter(i => izin[i.kod]);
+        return this.row(a.glyph, `linear-gradient(150deg, ${a.tint[0]}, ${a.tint[1]})`,
+          a.name,
+          acik.length ? acik.map(i => i.ad).join(' · ') : 'hiçbir erişim yok',
+          h('div.k-hstack', { style: { gap: '4px' } },
+            ...IZINLER.map(i => h('span.st-perm', {
+              class: izin[i.kod] ? 'acik' : '', title: `${i.ad}: ${izin[i.kod] ? 'açık' : 'kapalı'}`,
+              html: icon(i.glyph, 12),
+            }))));
+      }));
+    }
     this.group('Sistem uygulamaları', ...native.map(a =>
       this.row(a.glyph, `linear-gradient(150deg, ${a.tint[0]}, ${a.tint[1]})`, a.name, a.id,
         h('button.k-btn.s-sm', { text: 'Aç', onclick: () => this.ctx.openApp(a.id) }))));
+  }
+
+  /** Tek bir uygulamanın izin paneli. */
+  izinPaneli(app) {
+    const izin = permissions.get(app.id);
+    const istenen = permissions.requested(app.id);
+
+    const satirlar = IZINLER.map(i => {
+      const anahtar = h('div.k-toggle', { dataset: { on: izin[i.kod] ? '1' : '0' } });
+      on(anahtar, 'click', () => {
+        const yeniDeger = anahtar.dataset.on !== '1';
+        anahtar.dataset.on = yeniDeger ? '1' : '0';
+        permissions.set(app.id, i.kod, yeniDeger);
+        notify.toast(
+          `${app.name}: ${i.ad} ${yeniDeger ? 'açıldı' : 'kapatıldı'}` +
+          (this.ctx.os.wm.list().some(w => w.app.id === app.id) ? ' — uygulamayı yeniden açın' : ''),
+          { glyph: yeniDeger ? '🔓' : '🔒' });
+      });
+      return h('div.k-row',
+        h('span.ic', { html: icon(i.glyph, 15),
+          style: { color: i.risk === 'yüksek' ? 'var(--red)' : i.risk === 'orta' ? 'var(--orange, #ff9f0a)' : 'var(--text-3)' } }),
+        h('div', { style: { flex: 1 } },
+          h('div.k-text', { text: i.ad }),
+          h('div.k-text.t-caption', { text: i.aciklama }),
+          istenen && istenen.includes(i.kod)
+            ? h('div.k-text.t-caption', { text: 'Uygulama bunu kurulumda istedi.',
+                style: { color: 'var(--accent)' } })
+            : null),
+        anahtar);
+    });
+
+    notify._modal(finish => h('div.k-alert.k-sheet', { style: { width: '380px', textAlign: 'left' } },
+      h('div.k-hstack', { style: { gap: '10px', alignItems: 'center', marginBottom: '10px' } },
+        h('div', { html: icon(app.glyph, 22),
+          style: { color: '#fff', width: '38px', height: '38px', borderRadius: '10px',
+                   display: 'grid', placeItems: 'center',
+                   background: `linear-gradient(150deg, ${app.tint[0]}, ${app.tint[1]})` } }),
+        h('div',
+          h('div.k-text.t-headline', { text: app.name }),
+          h('div.k-text.t-caption', { text: 'Bu uygulama nelere erişebilir?' }))),
+      h('div.k-group', ...satirlar),
+      !istenen ? h('div.k-text.t-caption', { style: { marginTop: '10px' },
+        text: 'Bu uygulama manifestinde izin bildirmemiş. Ağ erişimi güvenlik gereği kapalı başlar.' }) : null,
+      h('div.acts', h('button.k-btn.v-primary.s-lg', { text: 'Bitti', onclick: () => finish(true) })),
+    ), this.el);
   }
 
   p_storage() {

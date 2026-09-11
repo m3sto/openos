@@ -17,6 +17,7 @@ import { openFile, saveFile } from '../ui/filedialog.js';
 import { paketOku, paketMi } from '../lang/package.js';
 import clipboard from './clipboard.js';
 import pkg from './pkgmanager.js';
+import permissions from './permissions.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
 import { seedFilesystem, ensureTree, seedGuide, KILAVUZ_YOLU } from './seed.js';
@@ -309,8 +310,14 @@ export class Kernel {
       version: meta.version || null,
       width: meta.width || 480, height: meta.height || 420,
       about: meta.about || `OpenSharp uygulaması · ${path}`,
+      permissions: Array.isArray(meta.permissions) ? meta.permissions : null,
       mount: (ctx) => this.mountOshApp(ctx, kaynakYolu),
     });
+    /* Manifest izin bildiriyorsa ilk kurulumda kaydedilir; bildirmiyorsa
+       varsayılanlar geçerli olur (ağ kapalı). */
+    if (Array.isArray(meta.permissions) && !permissions.requested(id)) {
+      permissions.grant(id, meta.permissions);
+    }
     if (!silent) notify.post({ title: 'Uygulama kuruldu', body: app.name, glyph: 'package', tint: app.tint });
     this.bus.emit('app:install', app);
     return app;
@@ -330,6 +337,11 @@ export class Kernel {
       const runner = new OshApp({
         container: inner, appId: ctx.app.id, name: ctx.app.name, tint: ctx.app.tint,
         cwd: VFS.dirname(path), osVersion: VERSION,
+        /* İzinler artık gerçekten uygulanıyor. Verilmediğinde standart
+           kitaplık "hepsi açık" varsayıyordu; imzasız bir paket bütün
+           dosyaları okuyup ağa gönderebiliyordu. */
+        permissions: permissions.get(ctx.app.id),
+        win: ctx.win,
         setTitle: t => ctx.setTitle(t),
         close: () => ctx.close(),
         openApp: (id, a) => this.openApp(id, a),
@@ -349,6 +361,7 @@ export class Kernel {
     if (!ok) return;
     wm.closeAll(id);
     registry.unregister(id);
+    permissions.forget(id);
     if (app.source && vfs.exists(app.source)) vfs.remove(app.source);
     settings.set('pinned', (settings.get('pinned') || []).filter(p => p !== id));
     notify.toast('Uygulama kaldırıldı', { glyph: '🗑️' });
