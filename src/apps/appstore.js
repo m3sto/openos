@@ -56,19 +56,94 @@ class Store {
     this.render();
     this.refreshCatalog();
     this.off = cloud.bus.on('auth', () => { this.renderSidebar(); this.render(); });
-    ctx.win.onClosed = () => this.off?.();
+    this.agiIzle();
+    ctx.win.onClosed = () => {
+      this.off?.();
+      window.removeEventListener('online', this.agDinleyici);
+      window.removeEventListener('offline', this.agDinleyici);
+    };
   }
 
   /* ---------------- data ---------------- */
+  /**
+   * Kataloğu çevrimiçi tazeler. Üç sonuç ayrı ayrı ele alınır: ağ yok,
+   * ağ var ama sunucu yanıt vermedi, ve ağ yavaş. Üçünü "yerleşik katalog"
+   * diye tek bir sessiz duruma toplamak, kullanıcıya neyin yanlış
+   * gittiğini söylemiyordu.
+   */
   async refreshCatalog() {
     this.loading = true;
+    this.agHatasi = null;
     this.render();
+
+    if (navigator.onLine === false) {
+      this.remote = [];
+      this.agHatasi = { tur: 'offline' };
+      this.loading = false;
+      this.render();
+      return;
+    }
+
+    const basladi = performance.now();
     try {
       const cat = await cloud.loadCatalog({ force: true });
       this.remote = cat?.apps || [];
-    } catch { this.remote = []; }
+      if (!cat) this.agHatasi = { tur: 'sunucu', ileti: cloud.lastError };
+      this.yavasMi(performance.now() - basladi);
+    } catch (e) {
+      this.remote = [];
+      this.agHatasi = { tur: 'sunucu', ileti: e.message };
+    }
     this.loading = false;
     this.render();
+  }
+
+  /**
+   * Bağlantı yavaşsa kullanıcıya bir kez haber verilir. Her yenilemede
+   * yinelemek sinir bozucu olur; oturumda bir kez ve yalnızca üst üste
+   * yavaş ölçüm alındığında gösterilir.
+   */
+  yavasMi(sure) {
+    this.yavasSayac = sure > 3500 ? (this.yavasSayac || 0) + 1 : 0;
+    if (this.yavasSayac >= 2 && !this.yavasUyarildi) {
+      this.yavasUyarildi = true;
+      notify.post({
+        title: 'Bağlantınız yavaş',
+        body: 'Mağaza geç yanıt veriyor. Kurulumlar uzun sürebilir.',
+        glyph: 'wifi', timeout: 7000,
+      });
+    }
+  }
+
+  /** Ağ durumu değişince mağaza kendini tazeler — elle yenilemeye gerek yok. */
+  agiIzle() {
+    this.agDinleyici = () => {
+      if (navigator.onLine) { notify.toast('Bağlantı geri geldi', { glyph: '📶' }); this.refreshCatalog(); }
+      else { this.agHatasi = { tur: 'offline' }; this.render(); }
+    };
+    window.addEventListener('online', this.agDinleyici);
+    window.addEventListener('offline', this.agDinleyici);
+  }
+
+  /** Ağ yokken ya da sunucu yanıt vermezken gösterilen sayfa. */
+  cevrimdisiSayfasi() {
+    const offline = this.agHatasi?.tur === 'offline';
+    const yerlesik = BUILTIN_CATALOG.length;
+    return h('div.as-offline',
+      h('div.as-offline-glyph', { html: icon(offline ? 'wifiOff' : 'cloud', 32) }),
+      h('div.k-text.t-title2', { text: offline ? 'Çevrimdışısınız' : 'Mağazaya ulaşılamadı' }),
+      h('div.k-text.t-callout.as-offline-body', {
+        text: offline
+          ? 'OpenOS ağa ulaşamıyor. Bağlantınız geri geldiğinde mağaza kendiliğinden tazelenir.'
+          : `Sunucu yanıt vermedi${this.agHatasi?.ileti ? ` (${this.agHatasi.ileti})` : ''}. Birkaç dakika sonra yeniden deneyin.` }),
+      h('div.as-offline-note',
+        h('span', { html: icon('package', 14) }),
+        h('span', { text: `Sistemle gelen ${yerlesik} uygulama çevrimdışı da kurulabilir.` })),
+      h('div.k-hstack.as-offline-acts',
+        h('button.k-btn.v-primary.s-sm', { html: icon('refresh', 13), text: ' Yeniden dene',
+          onclick: () => this.refreshCatalog() }),
+        h('button.k-btn.s-sm', { html: icon('package', 13), text: ' Yerleşik uygulamalar',
+          onclick: () => { this.agHatasi = null; this.render(); } })));
   }
 
   /** Built-in entries plus whatever the cloud/GitHub catalogue returned. */
@@ -133,6 +208,9 @@ class Store {
 
   /* ---------------- panes ---------------- */
   p_discover() {
+    /* Ağ sorunu varsa önce onu söyle; yerleşik kataloğu görmek isteyen
+       düğmeye basar. Sessizce eksik liste göstermek yanıltıcıydı. */
+    if (this.agHatasi) { this.body.appendChild(this.cevrimdisiSayfasi()); return; }
     const st = cloud.status();
     this.body.append(
       h('div.as-hero',

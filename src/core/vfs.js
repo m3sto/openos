@@ -1,9 +1,12 @@
 /* ==========================================================================
-   OpenOS · vfs.js — the virtual filesystem (persisted to localStorage)
+   OpenOS · vfs.js — the virtual filesystem
    POSIX-ish paths, directories and files, events on every mutation.
+   Disk `localStorage`'a **şifreli** yazılır; anahtar IndexedDB'de dışa
+   aktarılamaz bir CryptoKey olarak durur (bkz. core/vault.js).
    ========================================================================== */
 
 import { Bus, debounce } from './util.js';
+import vault, { Vault } from './vault.js';
 
 const KEY = 'openos.fs.v1';
 
@@ -19,19 +22,80 @@ export class VFS {
     this._save = debounce(() => this.persist(), 220);
   }
 
-  /* ---------------- persistence ---------------- */
-  load() {
+  /* ---------------- persistence ----------------
+     Disk şifreli saklanır (bkz. core/vault.js). Şifreleme eşzamansızdır;
+     bu yüzden `persist()` çağrıldığı anda dönen, arka planda yazan bir
+     işlem. Son yazımı beklemek gerektiğinde `flush()` kullanılır. */
+
+  /** @returns {Promise<boolean>} diskte okunabilir bir durum bulundu mu */
+  async load() {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return false;
+
+    /* Şifreli paket: kasayı aç ve çöz. */
+    if (Vault.paketMi(raw)) {
+      if (!(await vault.ac())) {
+        console.warn('[vfs] kasa açılamadı:', vault.sebep);
+        this.kasaHatasi = 'anahtar-yok';
+        return false;
+      }
+      try {
+        this.root = JSON.parse(await vault.coz(raw));
+        this.sifreli = true;
+        return true;
+      } catch (e) {
+        /* GCM doğrulaması başarısız: ya kurcalanmış ya da anahtar değişmiş.
+           Sessizce boş diskle açmak veri kaybını gizler — durum işaretlenir,
+           çekirdek kullanıcıyı uyarır. */
+        console.error('[vfs] disk çözülemedi', e);
+        this.kasaHatasi = 'cozulemedi';
+        return false;
+      }
+    }
+
+    /* Eski düz JSON: oku ve ilk fırsatta şifreliye taşı. */
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) { this.root = JSON.parse(raw); return true; }
+      this.root = JSON.parse(raw);
+      this.persist();
+      return true;
     } catch (e) { console.warn('[vfs] load failed', e); }
     return false;
   }
+
   persist() {
-    try { localStorage.setItem(KEY, JSON.stringify(this.root)); }
-    catch (e) { console.warn('[vfs] persist failed (quota?)', e); }
+    this._bekleyen = JSON.stringify(this.root);
+    if (this._yaziyor) { this._tekrar = true; return this._yaziyor; }
+    this._yaziyor = this._yaz();
+    return this._yaziyor;
   }
-  reset() { this.root = dirNode(''); this.persist(); }
+
+  async _yaz() {
+    try {
+      while (this._bekleyen !== null) {
+        const metin = this._bekleyen;
+        this._bekleyen = null;
+        if (await vault.ac()) {
+          localStorage.setItem(KEY, await vault.sifrele(metin));
+          this.sifreli = true;
+        } else {
+          /* Kasa kurulamıyorsa veri kaybetmektense düz yazmak yeğdir;
+             durum `sifreli` alanından okunabilir ve Ayarlar'da görünür. */
+          localStorage.setItem(KEY, metin);
+          this.sifreli = false;
+        }
+      }
+    } catch (e) {
+      console.warn('[vfs] persist failed (quota?)', e);
+    } finally {
+      this._yaziyor = null;
+      this._tekrar = false;
+    }
+  }
+
+  /** Bekleyen yazımın bitmesini bekler (kapanış, fabrika ayarları vb.). */
+  async flush() { if (this._yaziyor) await this._yaziyor; }
+
+  reset() { this.root = dirNode(''); return this.persist(); }
 
   /* ---------------- path helpers ---------------- */
   static norm(p) {

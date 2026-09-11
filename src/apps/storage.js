@@ -105,6 +105,17 @@ class Storage {
           onclick: () => { this.root = VFS.dirname(this.root); this.render(); } }) : null,
         h('button.k-btn.s-sm', { html: icon('refresh', 13), text: ' Tara', onclick: () => this.render() })),
       map,
+      h('div.k-sectitle', { text: 'Güvenlik' }),
+      h('div.k-group',
+        h('div.k-row',
+          h('span.ic', { html: icon(vfs.sifreli ? 'lock' : 'unlock', 15),
+            style: { color: vfs.sifreli ? 'var(--green, #30d158)' : 'var(--orange, #ff9f0a)' } }),
+          h('div', { style: { flex: 1 } },
+            h('div.k-text', { text: vfs.sifreli ? 'Disk şifreli' : 'Disk şifresiz' }),
+            h('div.k-text.t-caption', {
+              text: vfs.sifreli
+                ? 'AES-256-GCM · anahtar bu cihazda, dışa aktarılamaz. Depolamayı doğrudan okuyan ya da elle kurcalayan erişime kapalı.'
+                : 'Bu tarayıcı WebCrypto ya da IndexedDB sunmuyor; veri düz saklanıyor.' })))),
       h('div.k-sectitle', { text: 'Yeri kaplayanlar' }),
     );
 

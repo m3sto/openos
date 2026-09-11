@@ -51,7 +51,8 @@ export class Kernel {
   async start(stage) {
     this.stage = stage;
     settings.load();
-    const hadFs = vfs.load();
+    /* Disk şifreli; açılması anahtarın çözülmesini bekler. */
+    const hadFs = await vfs.load();
     settings.apply();
 
     const firstRun = settings.get('firstRun') || !hadFs;
@@ -98,6 +99,13 @@ export class Kernel {
     this.loadUserApps();
 
     this.bus.emit('ready');
+    if (vfs.kasaHatasi === 'cozulemedi') {
+      setTimeout(() => notify.post({
+        title: 'Disk çözülemedi',
+        body: 'Saklanan veri bu cihazın anahtarıyla açılamıyor — kurcalanmış ya da anahtar değişmiş olabilir. Sistem boş bir diskle açıldı; eski veri silinmedi.',
+        glyph: 'alert', timeout: 0,
+      }), 1400);
+    }
     setTimeout(() => {
       notify.post({
         title: `OpenOS ${VERSION} “${CODENAME}”`,
