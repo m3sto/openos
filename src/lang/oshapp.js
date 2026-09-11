@@ -21,6 +21,25 @@ export class OshApp {
     this.interp = new Interpreter({
       onStateChange: () => this.schedule(),
       onError: e => this.reportError(e),
+      /* `use "./yardimci.osh"` — yollar çağıran dosyanın klasörüne göre
+         çözülür, tıpkı bir modül sisteminde beklendiği gibi. */
+      moduleResolver: {
+        taban: opts.cwd || vfs.home,
+        normalize(yol) {
+          const t = String(yol);
+          return t.startsWith('/') ? VFS.norm(t) : VFS.join(this.taban, t);
+        },
+        read(tamYol) {
+          try { return vfs.read(tamYol); }
+          catch {
+            /* Uzantısız yazıldıysa `.osh` denenir. */
+            try { return vfs.read(tamYol + '.osh'); } catch { return null; }
+          }
+        },
+        /* Yüklenen modülün kendi `use`'ları o modülün klasörüne göre
+           çözülmeli; yoksa iki klasör derinde yollar kayar. */
+        child(tamYol) { return { ...this, taban: VFS.dirname(tamYol) }; },
+      },
     });
   }
 

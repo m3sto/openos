@@ -8,10 +8,16 @@ export const KEYWORDS = new Set([
   'app', 'state', 'let', 'const', 'fn', 'view', 'style',
   'if', 'else', 'elif', 'while', 'for', 'in', 'return', 'break', 'continue',
   'true', 'false', 'nil', 'and', 'or', 'not', 'use', 'export',
+  /* hata yönetimi */
+  'try', 'catch', 'finally', 'throw',
+  /* örüntü eşleme ve tipler */
+  'match', 'type', 'enum', 'from', 'as', 'is',
 ]);
 
 const PUNCT = [
-  '...', '=>', '->', '==', '!=', '<=', '>=', '&&', '||', '??', '+=', '-=', '*=', '/=', '%=',
+  /* Üç karakterliler önce gelmeli: tarayıcı ilk eşleşeni alır. */
+  '...', '?.', '??=', '||=', '&&=',
+  '=>', '->', '==', '!=', '<=', '>=', '&&', '||', '??', '+=', '-=', '*=', '/=', '%=',
   '{', '}', '(', ')', '[', ']', ',', ':', ';', '.', '+', '-', '*', '/', '%',
   '<', '>', '=', '!', '?', '|', '&', '@', '#',
 ];

@@ -7,8 +7,27 @@ import vfs, { VFS } from '../core/vfs.js';
 import notify from '../core/notify.js';
 import settings from '../core/settings.js';
 import registry from '../core/registry.js';
+import clipboard from '../core/clipboard.js';
+import { openFile, saveFile } from '../ui/filedialog.js';
 
 const call = (interp, fn, args = []) => interp.invoke(fn, args);
+
+/** Desen metnini RegExp'e çevirir; bozuk desen çökme yerine hiçbir şeye uymaz. */
+function yeniRe(desen, bayrak) {
+  try { return new RegExp(String(desen), String(bayrak || '')); }
+  catch { return /(?!)/; }
+}
+
+/** Dosya kutusu seçeneklerini OpenSharp adlandırmasından karşılığına çevirir. */
+function ayarSoz(o = {}) {
+  return {
+    title: o.baslik ?? o.title,
+    path: o.klasor ?? o.path,
+    name: o.ad ?? o.name,
+    multiple: o.coklu ?? o.multiple,
+    filters: o.uzantilar ?? o.filters,
+  };
+}
 
 export function makeStdlib(interp, ctx = {}) {
   const perms = ctx.permissions || { fs: true, apps: true, net: true };
@@ -179,6 +198,158 @@ export function makeStdlib(interp, ctx = {}) {
         .catch(e => cb && call(interp, cb, [null, str(e.message)]));
       return null;
     },
+    http_post: (url, govde, cb) => {
+      guard('net', 'ağ');
+      const json = typeof govde === 'object' && govde !== null;
+      fetch(str(url), {
+        method: 'POST',
+        headers: json ? { 'content-type': 'application/json' } : {},
+        body: json ? JSON.stringify(govde) : str(govde),
+      })
+        .then(async r => [await r.text(), r.status])
+        .then(([t, k]) => cb && call(interp, cb, [t, k]))
+        .catch(e => cb && call(interp, cb, [null, str(e.message)]));
+      return null;
+    },
+    net_online: () => navigator.onLine !== false,
+
+    /* ---------- düzenli ifadeler ----------
+       OpenSharp'ta desen bir metindir; bayraklar ayrı verilir. Böylece
+       dilde `/…/g` gibi ayrı bir değişmez türü öğrenmek gerekmez. */
+    re_test: (desen, metin, bayrak = '') => yeniRe(desen, bayrak).test(str(metin)),
+    re_find: (desen, metin, bayrak = '') => {
+      const m = yeniRe(desen, bayrak).exec(str(metin));
+      return m ? { text: m[0], index: m.index, groups: m.slice(1) } : null;
+    },
+    re_all: (desen, metin, bayrak = 'g') => {
+      const re = yeniRe(desen, bayrak.includes('g') ? bayrak : bayrak + 'g');
+      return [...str(metin).matchAll(re)].map(m => ({ text: m[0], index: m.index, groups: m.slice(1) }));
+    },
+    re_replace: (desen, metin, yerine, bayrak = 'g') =>
+      str(metin).replace(yeniRe(desen, bayrak), str(yerine)),
+    re_split: (desen, metin, bayrak = '') => str(metin).split(yeniRe(desen, bayrak)),
+
+    /* ---------- ek metin işlemleri ---------- */
+    title_case: (s0) => str(s0).replace(/\p{L}+/gu, w => w[0].toLocaleUpperCase('tr') + w.slice(1).toLocaleLowerCase('tr')),
+    trim_start: (s0) => str(s0).trimStart(),
+    trim_end: (s0) => str(s0).trimEnd(),
+    pad_end: (s0, n, c = ' ') => str(s0).padEnd(num(n), str(c)),
+    lines: (s0) => str(s0).split(/\r?\n/),
+    words: (s0) => str(s0).trim().split(/\s+/).filter(Boolean),
+    count: (s0, q) => Array.isArray(s0)
+      ? s0.filter(v => v === q).length
+      : (str(s0).split(str(q)).length - 1),
+    slug: (s0) => {
+      const harita = { ç: 'c', ğ: 'g', ı: 'i', ö: 'o', ş: 's', ü: 'u' };
+      return str(s0).toLowerCase().replace(/[çğıöşü]/g, c => harita[c] || c)
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    },
+
+    /* ---------- kodlama ---------- */
+    b64_encode: (s0) => { try { return btoa(unescape(encodeURIComponent(str(s0)))); } catch { return ''; } },
+    b64_decode: (s0) => { try { return decodeURIComponent(escape(atob(str(s0)))); } catch { return ''; } },
+    url_encode: (s0) => encodeURIComponent(str(s0)),
+    url_decode: (s0) => { try { return decodeURIComponent(str(s0)); } catch { return str(s0); } },
+    uuid: () => (crypto.randomUUID ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        })),
+    hash: (s0) => {
+      /* Kısa, kararlı bir özet — kimlik üretmek ve önbellek anahtarı için.
+         Güvenlik amaçlı değildir; parola saklamak için kullanılmamalı. */
+      let h = 2166136261;
+      const t = str(s0);
+      for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return (h >>> 0).toString(36);
+    },
+
+    /* ---------- tarih ve saat ---------- */
+    date_parts: (ts) => {
+      const d = new Date(ts === undefined ? Date.now() : num(ts));
+      return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate(),
+               hour: d.getHours(), minute: d.getMinutes(), second: d.getSeconds(),
+               weekday: d.getDay(), ts: d.getTime() };
+    },
+    date_make: (y, ay = 1, gun = 1, sa = 0, dk = 0) =>
+      new Date(num(y), num(ay) - 1, num(gun), num(sa), num(dk)).getTime(),
+    date_add: (ts, gun = 0, sa = 0, dk = 0) =>
+      num(ts) + num(gun) * 864e5 + num(sa) * 36e5 + num(dk) * 6e4,
+    date_diff: (a, b, birim = 'gun') => {
+      const fark = num(a) - num(b);
+      const bolen = { ms: 1, sn: 1e3, dk: 6e4, sa: 36e5, gun: 864e5 }[str(birim)] || 864e5;
+      return fark / bolen;
+    },
+    date_format: (ts, bicim = 'uzun') => {
+      const d = new Date(ts === undefined ? Date.now() : num(ts));
+      const yerel = settings.get('locale');
+      if (bicim === 'kisa') return d.toLocaleDateString(yerel);
+      if (bicim === 'saat') return d.toLocaleTimeString(yerel, { hour: '2-digit', minute: '2-digit' });
+      if (bicim === 'tam') return d.toLocaleString(yerel);
+      if (bicim === 'iso') return d.toISOString();
+      return d.toLocaleDateString(yerel, { day: 'numeric', month: 'long', year: 'numeric' });
+    },
+    date_relative: (ts) => {
+      const fark = Date.now() - num(ts);
+      const sn = Math.round(fark / 1000);
+      if (Math.abs(sn) < 60) return 'az önce';
+      const rtf = new Intl.RelativeTimeFormat(settings.get('locale'), { numeric: 'auto' });
+      for (const [birim, boy] of [['day', 86400], ['hour', 3600], ['minute', 60]]) {
+        if (Math.abs(sn) >= boy) return rtf.format(-Math.round(sn / boy), birim);
+      }
+      return 'az önce';
+    },
+
+    /* ---------- sistemin panosu ----------
+       Ana bilgisayarın panosuna erişilmez; OpenOS'un kendi panosu okunur. */
+    clip_read: () => clipboard.read(),
+    clip_write: (v) => clipboard.write(str(v), { kaynak: ctx.appId }),
+    clip_history: () => clipboard.gecmis.map(o => ({ text: o.text, zaman: o.zaman, kaynak: o.kaynak })),
+    clip_clear: () => { clipboard.clear(); return null; },
+
+    /* ---------- dosya kutuları ---------- */
+    dialog_open: (cb, o = {}) => {
+      guard('fs', 'dosya');
+      openFile({ ...ayarSoz(o), win: ctx.win }).then(y => cb && call(interp, cb, [y]));
+      return null;
+    },
+    dialog_save: (cb, o = {}) => {
+      guard('fs', 'dosya');
+      saveFile({ ...ayarSoz(o), win: ctx.win }).then(y => cb && call(interp, cb, [y]));
+      return null;
+    },
+
+    /* ---------- ek dosya işlemleri ---------- */
+    fs_read_json: (p, d = null) => { guard('fs', 'dosya'); return vfs.readJSON(ctx.resolve(str(p)), d); },
+    fs_write_json: (p, v) => { guard('fs', 'dosya'); vfs.writeJSON(ctx.resolve(str(p)), v); return true; },
+    fs_copy: (a, b) => { guard('fs', 'dosya'); try { vfs.copy(ctx.resolve(str(a)), ctx.resolve(str(b))); return true; } catch { return false; } },
+    fs_move: (a, b) => { guard('fs', 'dosya'); try { vfs.move(ctx.resolve(str(a)), ctx.resolve(str(b))); return true; } catch { return false; } },
+    fs_stat: (p) => { guard('fs', 'dosya'); const st = vfs.stat(ctx.resolve(str(p))); return st ? { ...st } : null; },
+    fs_search: (q, kok) => { guard('fs', 'dosya'); return vfs.search(str(q), { root: kok ? ctx.resolve(str(kok)) : '/' }); },
+    path_join: (...p) => VFS.join(...p.map(str)),
+    path_dir: (p) => VFS.dirname(str(p)),
+    path_name: (p) => VFS.basename(str(p)),
+    path_ext: (p) => VFS.ext(str(p)),
+
+    /* ---------- süreçler ve pencereler ---------- */
+    ps_list: () => (ctx.processes?.() || []),
+    win_title: (t) => { ctx.setTitle?.(str(t)); return null; },
+    win_close: () => { ctx.close?.(); return null; },
+    win_size: (w, h) => { ctx.resize?.(num(w), num(h)); return null; },
+
+    /* ---------- ses ---------- */
+    beep: (frekans = 660, sure = 120) => {
+      try {
+        const ac = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.frequency.value = num(frekans); o.type = 'sine';
+        g.gain.value = 0.07;
+        o.connect(g); g.connect(ac.destination);
+        o.start(); o.stop(ac.currentTime + num(sure) / 1000);
+        setTimeout(() => ac.close(), num(sure) + 200);
+      } catch {}
+      return null;
+    },
   };
 
   return lib;
@@ -186,13 +357,29 @@ export function makeStdlib(interp, ctx = {}) {
 
 export const STDLIB_DOCS = [
   ['Çıktı', ['print(...)', 'alert(msg)', 'confirm(msg, fn(ok))', 'ask(msg, fn(v))', 'toast(msg)', 'notify(title, body)']],
-  ['Tipler', ['len(v)', 'str(v)', 'num(v)', 'int(v)', 'type(v)', 'is_nil(v)']],
+  ['Tipler', ['len(v)', 'str(v)', 'num(v)', 'int(v)', 'bool(v)', 'type(v)', 'is_nil(v)']],
   ['Matematik', ['abs', 'floor', 'ceil', 'round(v,d)', 'min', 'max', 'sqrt', 'pow', 'random(a,b)', 'clamp(v,lo,hi)', 'PI']],
-  ['Metin', ['upper', 'lower', 'trim', 'split(s,sep)', 'join(l,sep)', 'replace', 'contains', 'slice', 'pad', 'format(n,d)']],
-  ['Listeler', ['range(a,b)', 'push', 'pop', 'map(l,fn)', 'filter', 'find', 'each', 'reduce', 'sort', 'sum', 'avg', 'unique', 'keys', 'values']],
-  ['Zaman', ['now()', 'time_str()', 'date_str()', 'after(ms,fn)', 'every(ms,fn)', 'cancel(t)']],
-  ['Dosya', ['fs_read(p)', 'fs_write(p,c)', 'fs_list(p)', 'fs_exists(p)', 'fs_remove(p)', 'fs_mkdir(p)']],
+  ['Metin', ['upper', 'lower', 'trim', 'trim_start', 'trim_end', 'split(s,sep)', 'join(l,sep)', 'replace',
+             'contains', 'starts', 'ends', 'slice', 'pad', 'pad_end', 'repeat', 'char_at', 'index_of',
+             'format(n,d)', 'title_case', 'lines', 'words', 'count', 'slug']],
+  ['Düzenli ifade', ['re_test(desen,metin)', 're_find(desen,metin)', 're_all(desen,metin)',
+                     're_replace(desen,metin,yerine)', 're_split(desen,metin)']],
+  ['Listeler', ['range(a,b)', 'push', 'pop', 'shift', 'unshift', 'remove_at', 'insert_at', 'map(l,fn)',
+                'filter', 'find', 'each', 'reduce', 'sort', 'reverse', 'sum', 'avg', 'unique']],
+  ['Nesneler', ['keys(o)', 'values(o)', 'entries(o)', 'has(o,k)', 'del(o,k)', 'merge(a,b)',
+                'json_str(v)', 'json_parse(s)']],
+  ['Zaman', ['now()', 'time_str()', 'date_str()', 'date_parts(ts)', 'date_make(y,ay,gun)', 'date_add(ts,gun)',
+             'date_diff(a,b,birim)', 'date_format(ts,bicim)', 'date_relative(ts)',
+             'after(ms,fn)', 'every(ms,fn)', 'cancel(t)']],
+  ['Dosya', ['fs_read(p)', 'fs_write(p,c)', 'fs_append(p,c)', 'fs_list(p)', 'fs_exists(p)', 'fs_remove(p)',
+             'fs_mkdir(p)', 'fs_read_json(p,d)', 'fs_write_json(p,v)', 'fs_copy(a,b)', 'fs_move(a,b)',
+             'fs_stat(p)', 'fs_search(q)', 'fs_home()', 'fs_dir()']],
+  ['Yol', ['path_join(...)', 'path_dir(p)', 'path_name(p)', 'path_ext(p)']],
+  ['Dosya kutuları', ['dialog_open(fn(yol), {uzantilar})', 'dialog_save(fn(yol), {ad})']],
+  ['Pano', ['clip_read()', 'clip_write(v)', 'clip_history()', 'clip_clear()']],
   ['Kalıcı depo', ['store_get(k,d)', 'store_set(k,v)', 'store_all()']],
-  ['Sistem', ['os_open(id)', 'os_apps()', 'os_theme(t)', 'os_accent(c)', 'os_info()', 'refresh()', 'title(t)', 'close()']],
-  ['Ağ', ['http_get(url, fn)', 'http_json(url, fn)']],
+  ['Kodlama', ['b64_encode(s)', 'b64_decode(s)', 'url_encode(s)', 'url_decode(s)', 'uuid()', 'hash(s)']],
+  ['Sistem', ['os_open(id)', 'os_apps()', 'os_theme(t)', 'os_accent(c)', 'os_user()', 'os_info()',
+              'ps_list()', 'refresh()', 'title(t)', 'close()', 'win_size(w,h)', 'beep(hz,ms)']],
+  ['Ağ', ['http_get(url, fn)', 'http_json(url, fn)', 'http_post(url, govde, fn)', 'net_online()']],
 ];

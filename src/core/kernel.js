@@ -15,6 +15,7 @@ import { upgradeScrollers } from '../ui/scroller.js';
 import { installTextControls } from '../ui/textfield.js';
 import { openFile, saveFile } from '../ui/filedialog.js';
 import { paketOku, paketMi } from '../lang/package.js';
+import clipboard from './clipboard.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
 import { seedFilesystem, ensureTree } from './seed.js';
@@ -112,6 +113,9 @@ export class Kernel {
     /* Sistemdeki her metin alanı — uygulamaların kendi yazdıkları dahil —
        düzenleme bağlam menüsünü kazanır. */
     installTextControls(document);
+    /* Sistemin kendi panosu: kopyalanan şey OpenOS'ta kalır, ana
+       bilgisayarın panosundan da içeri bir şey sızmaz. */
+    clipboard.install(document);
     this.playHomeEntrance();
   }
 

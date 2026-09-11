@@ -12,6 +12,7 @@ import { h, on } from '../core/util.js';
 import { icon } from '../core/icons.js';
 import { contextMenu } from './menu.js';
 import notify from '../core/notify.js';
+import clipboard from '../core/clipboard.js';
 
 /* ------------------------------------------------------------------ menü */
 
@@ -41,18 +42,10 @@ function yerineYaz(el, metin) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-async function panodanAl() {
-  try { return await navigator.clipboard.readText(); }
-  catch {
-    notify.post({ title: 'Pano okunamadı', body: 'Tarayıcı izin vermedi. ⌘V ile yapıştırabilirsiniz.', glyph: 'clipboard' });
-    return null;
-  }
-}
-
-async function panoyaYaz(metin) {
-  try { await navigator.clipboard.writeText(metin); return true; }
-  catch { return document.execCommand('copy'); }
-}
+/* Sistemin kendi panosu kullanılır: ana bilgisayarın panosuna ne yazılır
+   ne de ondan okunur. Bkz. core/clipboard.js */
+function panodanAl() { return clipboard.read(); }
+function panoyaYaz(metin) { clipboard.write(metin); return true; }
 
 /** Bir metin alanının bağlam menüsü — macOS'taki düzenleme menüsünün aynısı. */
 export function metinMenusu(el) {
@@ -66,11 +59,11 @@ export function metinMenusu(el) {
       run: () => { el.focus(); document.execCommand('redo'); } },
     '-',
     { label: 'Kes', glyph: 'scissors', key: '⌘X', disabled: !s || !yaz,
-      run: async () => { await panoyaYaz(s); yerineYaz(el, ''); } },
+      run: () => { panoyaYaz(s); yerineYaz(el, ''); } },
     { label: 'Kopyala', glyph: 'copy', key: '⌘C', disabled: !s,
       run: () => panoyaYaz(s) },
-    { label: 'Yapıştır', glyph: 'clipboard', key: '⌘V', disabled: !yaz,
-      run: async () => { const t = await panodanAl(); if (t != null) yerineYaz(el, t); } },
+    { label: 'Yapıştır', glyph: 'clipboard', key: '⌘V', disabled: !yaz || clipboard.bos,
+      run: () => { const t = panodanAl(); if (t) yerineYaz(el, t); } },
     '-',
     { label: 'Tümünü Seç', glyph: 'selectAll', key: '⌘A', disabled: !dolu,
       run: () => { el.focus(); el.select?.(); } },
