@@ -5,6 +5,7 @@
 
 import { h, clear, on, escapeHtml } from '../core/util.js';
 import { icon } from '../core/icons.js';
+import { contextMenu } from '../ui/menu.js';
 import settings from '../core/settings.js';
 import { DESCRIBE } from '../core/agent.js';
 
@@ -23,6 +24,18 @@ class AgentHub {
     this.body = h('div.content.k-scroll', { style: { padding: '18px 22px', gap: '16px' } });
     this.sidebar = h('div.sidebar', { style: { width: '190px' } });
     this.el = h('div.app-shell', this.sidebar, this.body);
+    contextMenu(this.el, () => [
+      { header: 'Ajan Merkezi' },
+      { label: 'Manifesti kopyala', glyph: 'copy', run: () => {
+        navigator.clipboard?.writeText(JSON.stringify(DESCRIBE, null, 2));
+        this.ctx.notify.toast('Kopyalandı', { glyph: '📋' });
+      } },
+      { label: 'Konsolu aç', glyph: 'terminal', run: () => this.select('console') },
+      { label: 'Çağrı günlüğü', glyph: 'clock', run: () => this.select('log') },
+      '-',
+      { label: 'Günlüğü temizle', glyph: 'trash', danger: true,
+        run: () => { this.ctx.os.agent.log.length = 0; this.render(); } },
+    ]);
     [['overview', 'Genel Bakış', 'info'], ['methods', 'Yöntemler', 'list'],
      ['log', 'Çağrı Günlüğü', 'clock'], ['console', 'Konsol', 'terminal'],
      ['recipes', 'Tarifler', 'sparkles']].forEach(([id, label, g]) => {

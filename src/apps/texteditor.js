@@ -4,6 +4,7 @@
 
 import { h, clear, on, debounce, escapeHtml } from '../core/util.js';
 import { icon } from '../core/icons.js';
+import { contextMenu } from '../ui/menu.js';
 import vfs, { VFS } from '../core/vfs.js';
 import notify from '../core/notify.js';
 
@@ -40,6 +41,24 @@ class Editor {
     this.el = h('div.app-shell', h('div.content', tb, h('div.txt-wrap', this.ta, this.prev), this.status));
 
     on(this.ta, 'input', () => { this.dirty = true; this.updateStatus(); this.renderPreview(); });
+    contextMenu(this.el, () => {
+      const sel = this.ta.value.slice(this.ta.selectionStart, this.ta.selectionEnd);
+      return [
+        { label: 'Kes', glyph: 'send', disabled: !sel, run: () => {
+          navigator.clipboard?.writeText(sel); this.replaceSel(''); } },
+        { label: 'Kopyala', glyph: 'copy', disabled: !sel, run: () => navigator.clipboard?.writeText(sel) },
+        { label: 'Yapıştır', glyph: 'download', run: async () => {
+          try { this.replaceSel(await navigator.clipboard.readText()); } catch {} } },
+        { label: 'Tümünü seç', glyph: 'list', run: () => { this.ta.focus(); this.ta.select(); } },
+        '-',
+        { label: 'Kaydet', glyph: 'save', key: '⌘S', run: () => this.save() },
+        { label: this.previewing ? 'Kaynağa dön' : 'Markdown önizleme', glyph: 'eye',
+          run: () => this.togglePreview() },
+        '-',
+        { label: 'Finder’da göster', glyph: 'folder', disabled: !this.path,
+          run: () => this.ctx.openApp('finder', { path: VFS.dirname(this.path) }) },
+      ];
+    });
     on(this.ta, 'keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); this.save(); }
     });
@@ -49,6 +68,15 @@ class Editor {
       if (!this.dirty) return true;
       this.save(); return true;
     };
+  }
+
+  /** Seçili metni değiştirir; imleç eklenen metnin sonuna gider. */
+  replaceSel(text) {
+    const a = this.ta.selectionStart, b = this.ta.selectionEnd;
+    this.ta.value = this.ta.value.slice(0, a) + text + this.ta.value.slice(b);
+    this.ta.selectionStart = this.ta.selectionEnd = a + text.length;
+    this.ta.focus();
+    this.dirty = true; this.updateStatus(); this.renderPreview();
   }
 
   open(p) {

@@ -3,6 +3,7 @@
    ========================================================================== */
 
 import { h, on } from '../core/util.js';
+import { contextMenu } from '../ui/menu.js';
 
 export default {
   id: 'calculator', name: 'Hesap Makinesi', glyph: 'calc', tint: ['#ff9f0a', '#c96f00'],
@@ -32,6 +33,20 @@ class Calc {
       pad.appendChild(b);
     });
     this.el = h('div.calc', this.tape, this.display, pad);
+    contextMenu(this.el, () => [
+      { header: 'Hesap Makinesi' },
+      { label: 'Sonucu kopyala', glyph: 'copy',
+        run: () => navigator.clipboard?.writeText(this.display.textContent) },
+      { label: 'Panodan yapıştır', glyph: 'download', run: async () => {
+        try {
+          const t = (await navigator.clipboard.readText()).replace(/[^0-9.,-]/g, '');
+          if (t) { this.cur = t.replace('.', ','); this.fresh = false; this.show(this.cur); }
+        } catch {}
+      } },
+      '-',
+      { label: 'Temizle', glyph: 'trash', run: () => this.press('AC') },
+      { label: 'Son basamağı sil', glyph: 'arrowL', run: () => this.press('⌫') },
+    ]);
     on(window, 'keydown', this.onKey = e => {
       if (!this.el.isConnected || !ctx.win.el.classList.contains('focused')) return;
       const map = { '/': '÷', '*': '×', '-': '−', Enter: '=', '=': '=', Escape: 'AC', Backspace: '⌫', '.': ',', ',': ',' };

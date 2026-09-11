@@ -4,6 +4,7 @@
 
 import { h, clear, add, on, fmtBytes, clamp } from '../core/util.js';
 import { icon } from '../core/icons.js';
+import { contextMenu } from '../ui/menu.js';
 import settings, { ACCENTS } from '../core/settings.js';
 import vfs, { VFS } from '../core/vfs.js';
 import registry from '../core/registry.js';
@@ -46,6 +47,15 @@ class SettingsApp {
     this.sidebar = h('div.sidebar');
     this.content = h('div.content.k-scroll', { style: { padding: '20px 24px', gap: '20px' } });
     this.el = h('div.app-shell', this.sidebar, this.content);
+    contextMenu(this.el, () => [
+      { header: 'Sistem Ayarları' },
+      ...PANES.slice(0, 6).map(([id, label, glyph]) => ({
+        label, glyph, checked: this.pane === id, run: () => this.select(id),
+      })),
+      '-',
+      { label: 'Fabrika ayarlarına dön', glyph: 'refresh', danger: true,
+        run: () => this.ctx.os.factoryReset() },
+    ]);
     this.renderSidebar();
     this.render();
     this.off = settings.bus.on('change', () => { if (['appearance', 'dock', 'general'].includes(this.pane)) this.render(); });

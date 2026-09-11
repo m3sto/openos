@@ -17,11 +17,12 @@ import calendar from './calendar.js';
 import appstore from './appstore.js';
 import agenthub from './agenthub.js';
 import cloudapp from './cloudapp.js';
+import graphics from './graphics.js';
 import misc from './misc.js';
 
 export const BUILTIN = [
   finder, terminal, studio, settingsApp, texteditor, notes, calculator,
-  browser, photos, calendar, appstore, cloudapp, agenthub, ...misc,
+  browser, photos, calendar, appstore, cloudapp, agenthub, graphics, ...misc,
 ];
 
 export function registerBuiltins() {

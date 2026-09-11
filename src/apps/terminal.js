@@ -3,6 +3,7 @@
    ========================================================================== */
 
 import { h, clear, on, fmtBytes, escapeHtml } from '../core/util.js';
+import { contextMenu } from '../ui/menu.js';
 import vfs, { VFS } from '../core/vfs.js';
 import settings from '../core/settings.js';
 import registry from '../core/registry.js';
@@ -42,8 +43,29 @@ class Terminal {
       if (!window.getSelection().toString()) this.input.focus();
     });
     on(this.input, 'keydown', e => this.key(e));
+    contextMenu(this.el, () => this.menu());
     setTimeout(() => this.input.focus(), 60);
     this.setPrompt();
+  }
+
+  menu() {
+    const sel = String(window.getSelection() || '');
+    return [
+      { header: 'Terminal' },
+      { label: 'Kopyala', glyph: 'copy', disabled: !sel.trim(),
+        run: () => navigator.clipboard?.writeText(sel) },
+      { label: 'Yapıştır', glyph: 'download', run: async () => {
+        try { this.input.value += await navigator.clipboard.readText(); this.input.focus(); }
+        catch { this.echo('pano erişimi reddedildi', 'err'); } } },
+      '-',
+      { label: 'Ekranı temizle', glyph: 'trash', key: '⌃L', run: () => clear(this.out) },
+      { label: 'Geçmişi göster', glyph: 'clock', run: () => this.submit('history') },
+      { label: 'Bu klasörü Finder’da aç', glyph: 'folder',
+        run: () => this.ctx.openApp('finder', { path: this.cwd }) },
+      '-',
+      { label: 'Yeni terminal', glyph: 'plus', run: () => this.ctx.openApp('terminal', { cwd: this.cwd }, true) },
+      { label: 'neofetch', glyph: 'cpu', run: () => this.submit('neofetch') },
+    ];
   }
 
   setPrompt() {

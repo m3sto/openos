@@ -9,6 +9,7 @@
 
 import { h, clear, add, on, fmtBytes, clamp } from '../core/util.js';
 import { icon } from '../core/icons.js';
+import { contextMenu } from '../ui/menu.js';
 import settings from '../core/settings.js';
 import notify from '../core/notify.js';
 
@@ -48,6 +49,17 @@ class Graphics {
     this.sidebar = h('div.sidebar', { style: { width: '196px' } });
     this.body = h('div.content.k-scroll', { style: { padding: '18px 22px', gap: '14px' } });
     this.el = h('div.app-shell', this.sidebar, this.body);
+    contextMenu(this.el, () => [
+      { header: 'Grafik İşletici' },
+      ...Object.entries(PRESETS).map(([k, p]) => ({
+        label: p.label, glyph: p.glyph, checked: settings.get('graphics.preset') === k,
+        run: () => this.applyPreset(k),
+      })),
+      '-',
+      { label: 'Sayaçları sıfırla', glyph: 'refresh',
+        run: () => { this.dropped = 0; this.longTasks = 0; this.fps = []; this.frames = []; } },
+      { label: 'Kalıcı depolama iste', glyph: 'database', run: () => this.select('memory') },
+    ]);
 
     this.renderSidebar();
     this.startSampling();
@@ -218,18 +230,28 @@ class Graphics {
       this.card('Kare hızı — son 60 saniye', this.canvas),
       this.card('Yorum', this.notes),
     );
-    this.paintMonitor();
+    /* mount() henüz pencereye eklenmemiş bir ağaç döndürür; ilk çizim
+       bağlandıktan sonra yapılmalı. */
+    requestAnimationFrame(() => this.paintMonitor());
+    setTimeout(() => this.paintMonitor(), 0);
+    clearInterval(this.repaint);
+    this.repaint = setInterval(() => {
+      if (this.pane === 'monitor') this.paintMonitor();
+    }, 1000);
   }
 
   paintMonitor() {
-    if (!this.canvas || !this.canvas.isConnected) return;
+    if (!this.canvas || !this.metrics) return;
     const s = this.stat();
+    const hidden = document.hidden;
     const tone = f => f >= 55 ? 'good' : f >= 35 ? 'warn' : 'bad';
 
+    const waiting = this.fps.length === 0;
+    const fps = v => waiting ? '—' : Math.round(v) + ' FPS';
     clear(this.metrics);
     this.metrics.append(
-      this.metric(Math.round(s.cur) + ' FPS', 'anlık', tone(s.cur)),
-      this.metric(Math.round(s.avg) + ' FPS', 'ortalama', tone(s.avg)),
+      this.metric(fps(s.cur), 'anlık', waiting ? '' : tone(s.cur)),
+      this.metric(fps(s.avg), 'ortalama', waiting ? '' : tone(s.avg)),
       this.metric(s.p50.toFixed(1) + ' ms', 'kare süresi (medyan)'),
       this.metric(s.p95.toFixed(1) + ' ms', 'kare süresi (p95)', s.p95 > 33 ? 'warn' : ''),
       this.metric(String(this.dropped), 'atlanan kare', this.dropped > 30 ? 'warn' : ''),
@@ -243,6 +265,7 @@ class Graphics {
 
     /* grafik */
     const c = this.canvas;
+    if (!c.isConnected) return;
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const W = c.clientWidth || 600, H = 130;
     if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr; }
@@ -276,6 +299,8 @@ class Graphics {
 
     /* yorum */
     const lines = [];
+    if (hidden) lines.push('· Sekme arka planda: tarayıcı kare döngüsünü durdurduğu için ölçüm duraklatıldı.');
+    else if (waiting) lines.push('· İlk örnek bekleniyor (yarım saniye)…');
     if (s.avg >= 55) lines.push('· Akıcı. Kalite kademesini yükseltebilirsiniz.');
     else if (s.avg >= 35) lines.push('· Kabul edilebilir ama sınırda. Bulanıklığı “düşük” yapmak en büyük kazancı verir.');
     else if (s.avg > 0) lines.push('· Düşük. Bulanıklık ve gölgeleri kapatın, duvar kâğıdını dondurun.');
@@ -283,6 +308,7 @@ class Graphics {
     if (this.dropped > 40) lines.push('· Atlanan kare sayısı yüksek; pencere sürüklerken takılma hissedilir.');
     if (settings.get('graphics.blur') === 'full') lines.push('· Bulanıklık tam açık — en pahalı ayar bu.');
     if (!lines.length) lines.push('· Ölçüm topluyor…');
+    if (waiting && !hidden) lines.length = 1;
     this.notes.textContent = lines.join('\n');
     this.notes.style.whiteSpace = 'pre-line';
   }
@@ -455,6 +481,7 @@ class Graphics {
 
   destroy() {
     cancelAnimationFrame(this.raf);
+    clearInterval(this.repaint);
     this.obs?.disconnect();
     this.off?.();
   }
