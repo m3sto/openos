@@ -16,8 +16,17 @@
  * Ardından OpenOS → Ayarlar → Tarayıcı → Proxy alanına Worker adresini yazın.
  */
 
+/* Sayfanın JS'ten gördüğü kimlik — shim bunu enjekte eder. */
 const OPENBROW_UA =
   'Mozilla/5.0 (OpenOS 1.0; Meridian; rv:1.0) AppleWebKit/605.1.15 (KHTML, like Gecko) OpenBrow/1.0 Safari/605.1.15';
+
+/* Yukarı akışa gönderilen kimlik. Bilinmeyen bir UA ile istek yapmak pek çok
+   sitede 403/404 ile karşılanır (GitHub bunlardan biri), o yüzden ağda sıradan
+   bir tarayıcı gibi görünürüz; OpenOS kimliği sayfaya istemci tarafında
+   enjekte edilir ve sayfanın okuduğu değer yine OpenBrow olur.
+   ?ua=openbrow ile ağ kimliği de zorlanabilir. */
+const UPSTREAM_UA =
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const STRIP_HEADERS = [
   'content-security-policy', 'content-security-policy-report-only',
@@ -42,14 +51,16 @@ export default {
     try { url = new URL(target); } catch { return new Response('geçersiz adres', { status: 400 }); }
     if (!/^https?:$/.test(url.protocol)) return new Response('yalnızca http/https', { status: 400 });
 
+    const forceOpenBrowUA = here.searchParams.get('ua') === 'openbrow';
     const upstream = await fetch(url.toString(), {
       method: request.method === 'POST' ? 'POST' : 'GET',
       body: request.method === 'POST' ? request.body : undefined,
       headers: {
-        'User-Agent': OPENBROW_UA,
-        'Accept': request.headers.get('accept') || 'text/html,application/xhtml+xml,*/*;q=0.8',
+        'User-Agent': forceOpenBrowUA ? OPENBROW_UA : UPSTREAM_UA,
+        'Accept': request.headers.get('accept') || 'text/html,application/xhtml+xml,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': request.headers.get('accept-language') || 'tr-TR,tr;q=0.9,en;q=0.6',
-        'Sec-CH-UA-Platform': '"OpenOS"',
+        'Upgrade-Insecure-Requests': '1',
+        ...(forceOpenBrowUA ? { 'Sec-CH-UA-Platform': '"OpenOS"' } : {}),
       },
       redirect: 'follow',
     });

@@ -47,7 +47,7 @@ export const DEFAULTS = {
   },
   browser: {
     engine: 'auto',                    // auto | direct | proxy
-    proxy: '',                         // OpenBrow proxy uç noktası (Cloudflare Worker)
+    proxy: 'https://openbrow-proxy.m3sto-wolfly.workers.dev',   // OpenBrow sayfa motoru
     search: 'duckduckgo',
     homepage: 'openos://start',
     spoofUA: true,
