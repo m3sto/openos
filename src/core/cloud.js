@@ -253,7 +253,10 @@ export class Cloud {
 
   status() {
     return {
-      mode: this.source,
+      /* `source` katalogun nereden geldiğini söyler; oturum açıkken henüz
+         katalog çekilmediyse "çevrimdışı" yazıyordu ve kullanıcı bağlı
+         olmadığını sanıyordu. Oturum varsa bulut bağlantısı da vardır. */
+      mode: this.source === 'offline' && this.signedIn && this.hasApi ? 'cloud' : this.source,
       api: this.hasApi ? this.endpoint : null,
       repo: this.hasRepo ? `${this.repo}@${this.branch}` : null,
       signedIn: this.signedIn,
