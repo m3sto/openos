@@ -115,14 +115,38 @@ export class Kernel {
     setTimeout(() => el.classList.remove('home-in'), 1600);
   }
 
-  startClocks() {
+  /**
+   * Pil durumu. Cihazda gerçek bir batarya varsa Battery Status API'sinden
+   * okunur ve olaylarla canlı kalır; yoksa makine prize takılı bir masaüstü
+   * kabul edilir ve göstergede fiş simgesi çıkar.
+   */
+  async startClocks() {
     clearInterval(this._batt);
-    this._batt = setInterval(() => {
-      const b = this.battery;
-      b.level += b.charging ? 0.004 : -0.003;
-      if (b.level >= 1) { b.level = 1; b.charging = false; }
-      if (b.level <= 0.14) b.charging = true;
-    }, 30000);
+    this.battery = { level: 1, charging: true, present: false, source: 'ac' };
+
+    if (navigator.getBattery) {
+      try {
+        const b = await navigator.getBattery();
+        /* Bataryası olmayan masaüstlerinde tarayıcı %100 + şarjda bildirir ve
+           kalan süreler sonsuzdur — gerçek bir pilden böyle ayrılır. */
+        const looksLikeDesktop = b.charging && b.level === 1 &&
+          b.chargingTime === 0 && b.dischargingTime === Infinity;
+        const sync = () => {
+          this.battery = {
+            level: b.level, charging: b.charging, present: !looksLikeDesktop,
+            source: looksLikeDesktop ? 'ac' : 'battery',
+            dischargingTime: b.dischargingTime, chargingTime: b.chargingTime,
+          };
+          this.bus.emit('battery', this.battery);
+          this.desktop?.menubar?.renderRight();
+        };
+        ['levelchange', 'chargingchange', 'chargingtimechange', 'dischargingtimechange']
+          .forEach(ev => b.addEventListener(ev, sync));
+        sync();
+        return;
+      } catch { /* izin verilmedi ya da desteklenmiyor */ }
+    }
+    this.bus.emit('battery', this.battery);
   }
 
   /* ==================== apps ==================== */

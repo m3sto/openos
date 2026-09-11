@@ -18,7 +18,7 @@ class Notifier {
   post(opts = {}) {
     const n = {
       id: uid('ntf'), time: Date.now(), title: 'OpenOS', body: '', app: 'system',
-      glyph: 'bell', tint: ['#8e8e93', '#5a5a60'], timeout: 5200, ...opts,
+      glyph: 'bell', tint: ['#8e8e93', '#5a5a60'], timeout: 5200, seen: false, ...opts,
     };
     this.history.unshift(n);
     if (this.history.length > 120) this.history.pop();
@@ -55,6 +55,8 @@ class Notifier {
     once(el, 'animationend', () => el.remove());
   }
   clearAll() { if (this.layer) clear(this.layer); }
+  markAllSeen() { this.history.forEach(n => { n.seen = true; }); this.bus.emit('seen'); }
+  clearHistory() { this.history.length = 0; this.bus.emit('seen'); }
 
   /* ---------------- modal dialogs ---------------- */
   _modal(build, root) {

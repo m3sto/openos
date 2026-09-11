@@ -77,11 +77,17 @@ class OpenBrow {
 
   /* ================== chrome ================== */
   build() {
-    /* --- tab strip --- */
-    this.tabstrip = h('div.ob-tabs');
-    this.newTabBtn = h('button.ob-newtab', { html: icon('plus', 14), title: 'Yeni sekme (⌘T)',
+    /* --- sekme şeridi: pencerenin kendi başlık çubuğunda yaşar --- */
+    this.tabstrip = h('div.ob-tabs.no-drag');
+    this.newTabBtn = h('button.ob-newtab.no-drag', { html: icon('plus', 14), title: 'Yeni sekme (⌘T)',
       onclick: () => this.newTab(settings.get('browser.homepage'), { focus: true }) });
-    const tabbar = h('div.ob-tabbar', this.tabstrip, this.newTabBtn);
+    const win = this.ctx.win;
+    win.el.classList.add('tabbed');
+    win.bar.classList.add('tall');
+    win.titleEl.style.display = 'none';          /* başlık metni yok, sekmeler var */
+    win.bar.insertBefore(this.tabstrip, win.trail);
+    win.bar.insertBefore(this.newTabBtn, win.trail);
+    this.enableTabReorder();
 
     /* --- toolbar --- */
     const nav = (g, title, fn, cls = '') => h('button.ob-btn' + cls, { html: icon(g, 16), title, onclick: fn });
@@ -115,7 +121,7 @@ class OpenBrow {
     this.statusbar = h('div.ob-status');
 
     this.el = h('div.ob',
-      tabbar, this.toolbar, this.progress,
+      this.toolbar, this.progress,
       h('div.ob-main', this.sidebar, this.stack),
       this.statusbar);
 
@@ -208,7 +214,6 @@ class OpenBrow {
     this.tabs.forEach(t => {
       const el = h('div.ob-tab', {
         class: [t === this.active ? 'on' : '', t.private ? 'priv' : ''].filter(Boolean).join(' '),
-        onclick: () => this.selectTab(t),
         onauxclick: e => { if (e.button === 1) this.closeTab(t); },
       },
         t.loading
@@ -221,6 +226,39 @@ class OpenBrow {
       contextMenu(el, () => this.tabMenu(t));
       this.tabstrip.appendChild(el);
     });
+  }
+
+  /** Sekmeler imleçle yer değiştirebilir. */
+  enableTabReorder() {
+    let dragTab = null, startX = 0, moved = false;
+    on(this.tabstrip, 'pointerdown', e => {
+      const el = e.target.closest('.ob-tab');
+      if (!el || e.target.closest('.ob-close')) return;
+      dragTab = this.tabs[[...this.tabstrip.children].indexOf(el)];
+      startX = e.clientX; moved = false;
+      el.setPointerCapture?.(e.pointerId);
+    });
+    on(this.tabstrip, 'pointermove', e => {
+      if (!dragTab) return;
+      if (!moved && Math.abs(e.clientX - startX) < 6) return;
+      moved = true;
+      this.tabstrip.classList.add('reordering');
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.ob-tab');
+      if (!over) return;
+      const toIdx = [...this.tabstrip.children].indexOf(over);
+      const fromIdx = this.tabs.indexOf(dragTab);
+      if (toIdx < 0 || toIdx === fromIdx) return;
+      this.tabs.splice(fromIdx, 1);
+      this.tabs.splice(toIdx, 0, dragTab);
+      this.renderTabs();
+    });
+    const done = () => {
+      if (dragTab && !moved) this.selectTab(dragTab);
+      dragTab = null; moved = false;
+      this.tabstrip.classList.remove('reordering');
+    };
+    on(this.tabstrip, 'pointerup', done);
+    on(this.tabstrip, 'pointercancel', done);
   }
 
   tabMenu(t) {
@@ -388,7 +426,9 @@ class OpenBrow {
     this.lock.innerHTML = icon(internal ? 'logo' : (t.url.startsWith('https') ? 'lock' : 'unlock'), 12);
     this.lock.className = 'ob-lock ' + (internal ? 'sys' : (t.url.startsWith('https') ? 'safe' : 'warn'));
     this.el.classList.toggle('private', !!t.private);
-    this.ctx.setTitle(`${t.title || 'OpenBrow'}${t.private ? ' — Gizli' : ''}`);
+    /* Pencere başlığı gizli; yine de Mission Control ve Dock için güncel tut. */
+    this.ctx.win.title = `${t.title || 'OpenBrow'}${t.private ? ' — Gizli' : ''}`;
+    this.ctx.win.wm.bus.emit('title', this.ctx.win);
     const marked = this.bookmarks.some(b => b.url === t.url);
     this.field.querySelector('.ob-btn.small').innerHTML = icon('star', 14);
     this.field.querySelector('.ob-btn.small').classList.toggle('on', marked);
@@ -679,6 +719,12 @@ class OpenBrow {
   }
 
   destroy() {
+    const win = this.ctx.win;
+    win.el.classList.remove('tabbed');
+    win.bar.classList.remove('tall');
+    if (win.titleEl) win.titleEl.style.display = '';
+    this.tabstrip?.remove();
+    this.newTabBtn?.remove();
     window.removeEventListener('message', this.onMessage);
     this.tabs.forEach(t => clearTimeout(t.timer));
     this.saveSoon();

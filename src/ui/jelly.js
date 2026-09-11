@@ -1,110 +1,171 @@
 /* ==========================================================================
-   OpenOS · ui/jelly.js — "jöle" pencere modu
-   A window under the cursor behaves like a soft body: it lags, shears against
-   the direction of travel, squashes along its motion and stretches across it,
-   then settles with a damped spring. Everything here is a transform on top of
-   the window's left/top geometry, so the window manager keeps owning layout.
+   OpenOS · ui/jelly.js — jöle (wobbly) pencereler
+   Pencere dört köşesi yaylarla bağlı esnek bir yüzey gibi davranır. Tutulan
+   köşe imleci anında izler, uzaktaki köşeler gecikir; aradaki fark bir
+   projektif dönüşüme (homography) çevrilip matrix3d olarak uygulanır — yani
+   pencere gerçekten eğrilir, yalnızca ölçeklenip kayarak taklit etmez.
    ========================================================================== */
 
 import settings from '../core/settings.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-/** Critically-under-damped spring, integrated per frame. */
+/* --------------------------------------------------------------------------
+   Dört noktadan dört noktaya projektif dönüşüm.
+   8 bilinmeyenli doğrusal sistemi Gauss eliminasyonuyla çözer; sonucu CSS'in
+   beklediği sütun-öncelikli matrix3d dizisine çevirir.
+   -------------------------------------------------------------------------- */
+function homography(src, dst) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i], [u, v] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  /* Gauss–Jordan, kısmi pivotlama ile */
+  for (let col = 0; col < 8; col++) {
+    let piv = col;
+    for (let r = col + 1; r < 8; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+    if (Math.abs(A[piv][col]) < 1e-9) return null;
+    [A[col], A[piv]] = [A[piv], A[col]];
+    [b[col], b[piv]] = [b[piv], b[col]];
+    const d = A[col][col];
+    for (let c = col; c < 8; c++) A[col][c] /= d;
+    b[col] /= d;
+    for (let r = 0; r < 8; r++) {
+      if (r === col) continue;
+      const f = A[r][col];
+      if (!f) continue;
+      for (let c = col; c < 8; c++) A[r][c] -= f * A[col][c];
+      b[r] -= f * b[col];
+    }
+  }
+  const [a, bb, c, d, e, f, g, hh] = b;
+  /* CSS matrix3d sütun-öncelikli: m11 m12 m13 m14, m21 … */
+  return [a, d, 0, g,
+          bb, e, 0, hh,
+          0, 0, 1, 0,
+          c, f, 0, 1];
+}
+
+/* Tek boyutlu sönümlü yay. */
 class Spring {
-  constructor(stiffness = 0.14, damping = 0.72) {
-    this.k = stiffness; this.d = damping;
-    this.value = 0; this.velocity = 0; this.target = 0;
-  }
+  constructor(k, damp) { this.k = k; this.d = damp; this.x = 0; this.v = 0; }
   step() {
-    const force = (this.target - this.value) * this.k;
-    this.velocity = (this.velocity + force) * this.d;
-    this.value += this.velocity;
-    return this.value;
+    this.v = (this.v - this.x * this.k) * this.d;
+    this.x += this.v;
+    return this.x;
   }
-  get settled() { return Math.abs(this.velocity) < 0.001 && Math.abs(this.target - this.value) < 0.001; }
-  reset(v = 0) { this.value = this.target = v; this.velocity = 0; }
+  kick(a) { this.v += a; }
+  get still() { return Math.abs(this.v) < 0.02 && Math.abs(this.x) < 0.06; }
+  reset() { this.x = 0; this.v = 0; }
 }
 
 export class Jelly {
-  /**
-   * @param {HTMLElement} el   the window element
-   * @param {object} opts      { origin: 'top'|'center', strength }
-   */
+  /** @param {HTMLElement} el pencere öğesi */
   constructor(el, opts = {}) {
     this.el = el;
     this.opts = opts;
-    this.shearX = new Spring(0.16, 0.70);
-    this.shearY = new Spring(0.16, 0.70);
-    this.squash = new Spring(0.13, 0.74);
-    this.lastX = 0; this.lastY = 0;
+    /* köşe sırası: SÜ, SğÜ, SğA, SA */
+    this.corners = Array.from({ length: 4 }, () => ({
+      x: new Spring(0.16, 0.80),
+      y: new Spring(0.16, 0.80),
+    }));
+    this.weights = [1, 1, 1, 1];
     this.running = false;
     this.raf = 0;
+    this.dragging = false;
+    this.offset = { x: 0, y: 0 };     /* sürükleme sırasında kompozit öteleme */
   }
 
-  static get enabled() { return !!settings.get('desktop.jelly') && !settings.get('system.reduceMotion'); }
+  static get enabled() {
+    return !!settings.get('desktop.jelly') && !settings.get('system.reduceMotion');
+  }
   get strength() { return (settings.get('desktop.jellyStrength') ?? 1) * (this.opts.strength ?? 1); }
 
-  /* ---------------- lifecycle ---------------- */
-  begin(x, y, grab) {
+  /* ---------------------------------------------------------------- tutma */
+  /**
+   * @param {number} px 0..1 — tutulan noktanın pencere içindeki yatay oranı
+   * @param {number} py 0..1
+   */
+  grab(px, py) {
     if (!Jelly.enabled) return;
-    this.lastX = x; this.lastY = y;
-    this.grab = grab;                       /* { px, py } in 0..1 of the window box */
+    this.dragging = true;
     this.el.classList.add('jelly');
-    if (grab) this.el.style.transformOrigin = `${(grab.px * 100).toFixed(1)}% ${(grab.py * 100).toFixed(1)}%`;
+    this.el.style.transformOrigin = '0 0';
+    /* Tutulan noktaya yakın köşe az, uzak köşe çok gecikir. */
+    const pts = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    this.weights = pts.map(([cx, cy]) => {
+      const d = Math.hypot(cx - px, cy - py) / Math.SQRT2;   /* 0..1 */
+      return 0.18 + 0.82 * d;
+    });
     this.start();
   }
 
-  /** Feed the pointer position; velocity drives the deformation. */
-  move(x, y) {
-    if (!Jelly.enabled) return;
-    const vx = clamp(x - this.lastX, -90, 90);
-    const vy = clamp(y - this.lastY, -90, 90);
-    this.lastX = x; this.lastY = y;
+  /** Pencere bu karede (dx,dy) kadar ötelendi — köşelere tepki ver. */
+  move(dx, dy) {
+    if (!Jelly.enabled || !this.dragging) return;
     const s = this.strength;
-    /* shear opposes the motion: the window "drags" behind the cursor */
-    this.shearX.target = clamp(-vx * 0.36, -16, 16) * s;
-    this.shearY.target = clamp(-vy * 0.22, -10, 10) * s;
-    this.squash.target = clamp(Math.hypot(vx, vy) * 0.0042, 0, 0.09) * s;
+    const ax = clamp(-dx, -70, 70) * 0.62 * s;
+    const ay = clamp(-dy, -70, 70) * 0.62 * s;
+    this.corners.forEach((c, i) => {
+      c.x.kick(ax * this.weights[i]);
+      c.y.kick(ay * this.weights[i]);
+    });
     this.start();
   }
 
-  /** Release: everything springs home, overshooting once or twice. */
-  end() {
-    this.shearX.target = 0;
-    this.shearY.target = 0;
-    this.squash.target = 0;
-    /* a parting kick so the settle is visible even on a slow release */
-    this.shearX.velocity += this.shearX.value * -0.22;
-    this.squash.velocity += 0.012 * this.strength;
+  release() {
+    this.dragging = false;
+    /* bırakırken hafif bir salınım kalsın */
+    const s = this.strength;
+    this.corners.forEach((c, i) => {
+      c.x.kick(c.x.x * -0.22 * this.weights[i] * s);
+      c.y.kick(c.y.x * -0.22 * this.weights[i] * s);
+    });
     this.start();
   }
 
-  /** One-shot wobble — used for open, maximise, snap. */
-  pulse(amount = 0.06, shear = 6) {
+  /** Tek seferlik dalgalanma — açılış, büyütme, kenara yapışma için. */
+  pulse(amount = 16) {
     if (!Jelly.enabled) return;
     this.el.classList.add('jelly');
-    this.squash.value = amount * this.strength;
-    this.squash.velocity = 0.02 * this.strength;
-    this.shearX.value = shear * this.strength;
-    this.squash.target = 0; this.shearX.target = 0;
+    this.el.style.transformOrigin = '0 0';
+    const a = amount * this.strength;
+    this.corners[0].y.kick(-a); this.corners[1].y.kick(-a * 0.6);
+    this.corners[2].y.kick(a);  this.corners[3].y.kick(a * 0.6);
+    this.corners[1].x.kick(a * 0.5); this.corners[3].x.kick(-a * 0.5);
     this.start();
   }
 
-  /* ---------------- the loop ---------------- */
+  /* ------------------------------------------------------- kompozit öteleme */
+  /** Sürükleme sırasında left/top yerine transform kullanılır (yerleşim yok). */
+  setOffset(x, y) {
+    this.offset.x = x; this.offset.y = y;
+    if (!this.running) this.apply();
+  }
+  clearOffset() { this.offset.x = this.offset.y = 0; }
+
+  /* ---------------------------------------------------------------- döngü */
   start() {
     if (this.running) return;
     this.running = true;
     const tick = () => {
-      const sx = this.shearX.step();
-      const sy = this.shearY.step();
-      const q = this.squash.step();
-      this.apply(sx, sy, q);
-      if (this.shearX.settled && this.shearY.settled && this.squash.settled) {
+      let moving = false;
+      for (const c of this.corners) {
+        c.x.step(); c.y.step();
+        if (!c.x.still || !c.y.still) moving = true;
+      }
+      this.apply();
+      if (!moving && !this.dragging) {
         this.running = false;
-        this.apply(0, 0, 0);
-        this.el.style.transform = '';
-        this.el.classList.remove('jelly');
+        this.corners.forEach(c => { c.x.reset(); c.y.reset(); });
+        this.apply();
+        if (!this.offset.x && !this.offset.y) {
+          this.el.style.transform = '';
+          this.el.style.transformOrigin = '';
+          this.el.classList.remove('jelly');
+        }
         return;
       }
       this.raf = requestAnimationFrame(tick);
@@ -112,24 +173,28 @@ export class Jelly {
     this.raf = requestAnimationFrame(tick);
   }
 
-  apply(sx, sy, q) {
-    /* squash along travel, stretch across it — volume roughly preserved */
-    const dir = Math.abs(sx) >= Math.abs(sy);
-    const scaleX = 1 + (dir ? q : -q * 0.6);
-    const scaleY = 1 + (dir ? -q * 0.6 : q);
-    this.el.style.transform =
-      `skewX(${sx.toFixed(2)}deg) skewY(${(sy * 0.35).toFixed(2)}deg) ` +
-      `scale(${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`;
-    /* corners soften as the window stretches — the giveaway that sells jelly */
-    const r = 14 + Math.abs(q) * 130;
-    this.el.style.borderRadius = `${r.toFixed(1)}px`;
+  apply() {
+    const w = this.el.offsetWidth, h = this.el.offsetHeight;
+    if (!w || !h) return;
+    const src = [[0, 0], [w, 0], [w, h], [0, h]];
+    /* Köşe sapmalarını pencere içinde kalacak biçimde sınırla. */
+    const lim = Math.min(w, h) * 0.32;
+    const dst = src.map((p, i) => [
+      p[0] + clamp(this.corners[i].x.x, -lim, lim),
+      p[1] + clamp(this.corners[i].y.x, -lim, lim),
+    ]);
+    const m = homography(src, dst);
+    const t = (this.offset.x || this.offset.y)
+      ? `translate3d(${this.offset.x}px, ${this.offset.y}px, 0)` : '';
+    this.el.style.transform = m ? `${t} matrix3d(${m.map(n => +n.toFixed(6)).join(',')})` : t;
   }
 
   destroy() {
     cancelAnimationFrame(this.raf);
     this.running = false;
+    this.dragging = false;
     this.el.style.transform = '';
-    this.el.style.borderRadius = '';
+    this.el.style.transformOrigin = '';
     this.el.classList.remove('jelly');
   }
 }

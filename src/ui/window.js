@@ -6,6 +6,7 @@ import { h, clamp, uid, Bus, drag, once, $ } from '../core/util.js';
 import { icon } from '../core/icons.js';
 import settings from '../core/settings.js';
 import { Jelly } from './jelly.js';
+import { contextMenu } from './menu.js';
 
 const MENUBAR = 28;
 const EDGE = 6;
@@ -34,7 +35,7 @@ export class Win {
     this.build();
     this.jelly = new Jelly(this.el);
     wm.attach(this);
-    if (Jelly.enabled) setTimeout(() => this.jelly.pulse(0.05, 4), 60);
+    if (Jelly.enabled) setTimeout(() => this.jelly.pulse(9), 60);
   }
 
   build() {
@@ -63,14 +64,49 @@ export class Win {
     this.place();
 
     this.bar.addEventListener('pointerdown', e => {
-      if (e.target.closest('button, .tbtn, input, select')) return;
+      if (e.target.closest('button, .tbtn, input, select, .no-drag')) return;
       this.focus(); this.startDrag(e);
     });
     this.bar.addEventListener('dblclick', e => {
-      if (e.target.closest('button, .tbtn')) return;
+      if (e.target.closest('button, .tbtn, .no-drag')) return;
       this.toggleMax();
     });
     this.el.addEventListener('pointerdown', () => this.focus(), true);
+    contextMenu(this.bar, () => this.windowMenu());
+    contextMenu(this.traffic, () => this.windowMenu());
+  }
+
+  /** Her pencerenin iskeletinde bulunan menü. */
+  windowMenu() {
+    const maxed = this.state === 'max' || this.state === 'snap';
+    return [
+      { header: this.title },
+      { label: 'Küçült', glyph: 'minimize', key: '⌘M', run: () => this.minimize() },
+      { label: maxed ? 'Geri Al' : 'Genişlet', glyph: maxed ? 'restore' : 'maximize',
+        run: () => this.toggleMax() },
+      { label: this.state === 'full' ? 'Tam Ekrandan Çık' : 'Tam Ekran',
+        glyph: 'fullscreen', key: '⌃⌘F', run: () => this.fullscreen() },
+      '-',
+      { label: 'Sola Yapıştır', glyph: 'chevronL', run: () => this.wm.applySnap(this, 'left') },
+      { label: 'Sağa Yapıştır', glyph: 'chevronR', run: () => this.wm.applySnap(this, 'right') },
+      { label: 'Ortala', glyph: 'grid', run: () => this.center() },
+      '-',
+      { label: 'Alta Al', glyph: 'layers', run: () => this.wm.sendToBack(this) },
+      { label: 'Diğerlerini Küçült', glyph: 'eye',
+        run: () => this.wm.list().filter(w => w !== this).forEach(w => w.minimize()) },
+      '-',
+      { label: 'Pencereyi Kapat', glyph: 'x', key: '⌘W', danger: true, run: () => this.close() },
+    ];
+  }
+
+  /** Pencereyi ekranın ortasına taşır. */
+  center() {
+    if (this.state !== 'normal') this.unmaximize();
+    const vw = this.wm.layer.clientWidth, vh = this.wm.layer.clientHeight;
+    this.setBounds(Math.round((vw - this.w) / 2),
+                   Math.max(MENUBAR + 8, Math.round((vh - this.h) / 2.2)),
+                   this.w, this.h, true);
+    this.jelly.pulse(12);
   }
 
   /* ---------------- geometry ---------------- */
@@ -105,43 +141,59 @@ export class Win {
   /* ---------------- interaction ---------------- */
   startDrag(e) {
     if (this.state === 'full') return;
-    const ox = this.x, oy = this.y;
+    let ox = this.x, oy = this.y;
     const wasMax = this.state === 'max';
     const relX = (e.clientX - this.x) / this.w;
-    let hint = null;
+    let lastDx = 0, lastDy = 0, rebased = false;
     this.el.classList.add('dragging');
-    this.jelly.begin(e.clientX, e.clientY, {
-      px: (e.clientX - this.x) / this.w,
-      py: (e.clientY - this.y) / this.h,
-    });
+    this.jelly.grab((e.clientX - this.x) / this.w, (e.clientY - this.y) / this.h);
 
     drag(e, {
       cursor: 'default',
       onMove: ({ dx, dy, x, y, moved }) => {
         if (!moved) return;
-        this.jelly.move(x, y);
-        if (wasMax && this.state === 'max') {
+
+        /* Büyütülmüş pencere sürüklenince eski boyutuna dönüp imlece yapışır;
+           o an öteleme temeli yeniden kurulur. */
+        if (wasMax && !rebased && this.state === 'max') {
+          rebased = true;
           this.unmaximize(true);
-          this.x = clamp(x - this.w * relX, 0, this.wm.layer.clientWidth - this.w);
-          this.y = Math.max(MENUBAR, y - 18);
+          ox = clamp(x - this.w * relX, 0, this.wm.layer.clientWidth - this.w);
+          oy = Math.max(MENUBAR, y - 18);
+          this.x = ox; this.y = oy;
           this.place();
+          lastDx = dx; lastDy = dy;
           return;
         }
-        this.x = ox + dx;
-        this.y = Math.max(MENUBAR, oy + dy);
-        this.place();
+
+        /* Sürükleme boyunca left/top'a dokunulmaz — her kare yerleşim
+           hesabı tetiklemek dönme/takılma hissinin kaynağıydı. Yalnızca
+           bileşik transform güncellenir; GPU katmanında kalır. */
+        const offX = ox + dx - this.x;
+        const offY = Math.max(MENUBAR, oy + dy) - this.y;
+        this.jelly.setOffset(offX, offY);
+        this.jelly.move(dx - lastDx, dy - lastDy);
+        lastDx = dx; lastDy = dy;
+
         const z = this.wm.snapZone(x, y);
-        if (z) { hint = this.wm.showSnapHint(z); } else { this.wm.hideSnapHint(); hint = null; }
+        if (z) this.wm.showSnapHint(z); else this.wm.hideSnapHint();
       },
-      onEnd: ({ x, y, moved }) => {
+      onEnd: ({ dx, dy, x, y, moved }) => {
         this.el.classList.remove('dragging');
-        this.jelly.end();
         this.wm.hideSnapHint();
         if (moved) {
+          /* Öteleme gerçek konuma yazılır, transform sıfırlanır. */
+          this.x = ox + dx;
+          this.y = Math.max(MENUBAR, oy + dy);
+          this.jelly.clearOffset();
+          this.place();
           const z = this.wm.snapZone(x, y);
           if (z) this.wm.applySnap(this, z);
           else this.clampIntoView();
+        } else {
+          this.jelly.clearOffset();
         }
+        this.jelly.release();
       },
     });
   }
@@ -153,12 +205,13 @@ export class Win {
     const o = { x: this.x, y: this.y, w: this.w, h: this.h };
     const min = { w: this.app.minWidth || 320, h: this.app.minHeight || 200 };
     this.el.classList.add('resizing');
-    this.jelly.begin(e.clientX, e.clientY, {
-      px: dir.includes('w') ? 1 : dir.includes('e') ? 0 : 0.5,
-      py: dir.includes('n') ? 1 : dir.includes('s') ? 0 : 0.5,
-    });
+    this.jelly.grab(dir.includes('w') ? 1 : dir.includes('e') ? 0 : 0.5,
+                    dir.includes('n') ? 1 : dir.includes('s') ? 0 : 0.5);
+    let lrx = 0, lry = 0;
     drag(e, {
       onMove: ({ dx, dy }) => {
+        this.jelly.move((dx - lrx) * 0.5, (dy - lry) * 0.5);
+        lrx = dx; lry = dy;
         let { x, y, w, h: hh } = o;
         if (dir.includes('e')) w = Math.max(min.w, o.w + dx);
         if (dir.includes('s')) hh = Math.max(min.h, o.h + dy);
@@ -168,7 +221,7 @@ export class Win {
       },
       onEnd: () => {
         this.el.classList.remove('resizing');
-        this.jelly.end();
+        this.jelly.release();
         this.wm.bus.emit('resized', this);
       },
     });
@@ -197,7 +250,7 @@ export class Win {
     const vw = this.wm.layer.clientWidth, vh = this.wm.layer.clientHeight;
     const dockGap = settings.get('dock.autohide') ? 6 : (settings.get('dock.size') + 22);
     this.setBounds(0, MENUBAR, vw, vh - MENUBAR - (settings.get('dock.position') === 'bottom' ? dockGap : 6));
-    setTimeout(() => { this.el.classList.remove('snapping'); this.jelly.pulse(0.05, 0); }, 230);
+    setTimeout(() => { this.el.classList.remove('snapping'); this.jelly.pulse(14); }, 230);
     this.wm.bus.emit('state', this);
   }
   unmaximize(silent, animate) {
@@ -324,6 +377,19 @@ export class WindowManager {
     this.order = this.order.filter(w => w !== win).concat(win);
     this.bus.emit('focus', win);
   }
+  /** Pencereyi yığının en altına gönderir; odak bir üsttekine geçer. */
+  sendToBack(win) {
+    const others = this.order.filter(w => w !== win);
+    if (!others.length) return;
+    const minZ = Math.min(...others.map(w => parseInt(w.el.style.zIndex || '100', 10)));
+    win.el.style.zIndex = String(Math.max(1, minZ - 1));
+    win.el.classList.remove('focused');
+    this.order = [win, ...others];
+    const top = others[others.length - 1];
+    if (top && top.state !== 'min') this.focus(top);
+    this.bus.emit('state', win);
+  }
+
   focusNext(except) {
     const next = [...this.order].reverse().find(w => w !== except && w.state !== 'min');
     if (next) this.focus(next);
@@ -380,7 +446,7 @@ export class WindowManager {
     win._restore = win._restore || { x: win.x, y: win.y, w: win.w, h: win.h };
     win.state = 'snap';
     win.setBounds(r.x, r.y, r.w, r.h, true);
-    setTimeout(() => win.jelly.pulse(0.055, 0), 210);
+    setTimeout(() => win.jelly.pulse(14), 210);
   }
 
   /** Tile every visible window in a grid (Mission Control "tidy"). */
