@@ -1099,3 +1099,37 @@ mark.ob-hit { background: var(--yellow); color: #000; border-radius: 2px; }
   background: color-mix(in srgb, var(--accent) 26%, transparent);
   border-radius: 3px;
 }
+
+/* ---- OpenBrow hata sayfaları ---- */
+.ob-error {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  padding: 28px; background: var(--surface); overflow: auto;
+}
+.ob-error-card { max-width: 480px; text-align: center; }
+.ob-error-glyph {
+  width: 68px; height: 68px; margin: 0 auto 14px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-3);
+}
+.ob-error-body { margin-top: 6px; color: var(--text-2); line-height: 1.55; }
+.ob-error-url {
+  margin: 12px auto 0; padding: 6px 10px; max-width: 100%;
+  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+  background: var(--surface-2); border-radius: var(--r-xs);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ob-error-tips {
+  margin: 14px auto 0; padding: 0; max-width: 330px;
+  text-align: left; list-style: none; display: flex; flex-direction: column; gap: 5px;
+}
+.ob-error-tips li {
+  font-size: 12.5px; color: var(--text-2); padding-left: 16px; position: relative;
+}
+.ob-error-tips li::before {
+  content: "·"; position: absolute; left: 5px; color: var(--accent); font-weight: 700;
+}
+.ob-error-acts { gap: 8px; margin-top: 18px; justify-content: center; flex-wrap: wrap; }
+.ob-error-code {
+  margin-top: 18px; font-family: var(--mono); font-size: 10px;
+  color: var(--text-3); opacity: .7; letter-spacing: .04em;
+}

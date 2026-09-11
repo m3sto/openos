@@ -14,6 +14,7 @@ import settings from '../core/settings.js';
 import registry from '../core/registry.js';
 import notify from '../core/notify.js';
 import vfs, { VFS } from '../core/vfs.js';
+import clipboard from '../core/clipboard.js';
 
 export const OPENBROW_VERSION = '1.0';
 /* Sayfa motorunun adresi bir uygulama ayrıntısıdır; arayüzde hiçbir yerde
@@ -69,6 +70,18 @@ class OpenBrow {
 
     this.build();
     this.bindMessages();
+    /* Savunma katmanı. Sayfa menüsünü normalde enjekte edilen betik
+       engelliyor; ama o betik bir sayfada çalışmazsa (katı CSP, ayrıştırma
+       hatası, betiği kapatan bir uzantı) olay ana belgeye düşüyor ve
+       kullanıcı OpenOS'un değil, OpenOS'u çalıştıran tarayıcının menüsünü
+       görüyordu. Tarayıcı alanındaki her sağ tuş burada karşılanır. */
+    contextMenu(this.stack, e => {
+      const a = e.target?.closest?.('a[href]');
+      return a ? this.linkMenuItems(a.href) : this.pageMenu();
+    });
+    /* Pencerenin üzerinden örneğe ulaşılabilsin: ajan arayüzü ve tanılama
+       bunu kullanıyor, uygulamanın kendi davranışına etkisi yok. */
+    ctx.win.appInstance = this;
     const a = ctx.args || {};
     this.newTab(a.url || (a.query ? this.searchUrl(a.query) : settings.get('browser.homepage')), { focus: true });
   }
@@ -110,9 +123,11 @@ class OpenBrow {
     this.toolbar = h('div.ob-toolbar',
       this.sideB, h('span.ob-sep'), this.backB, this.fwdB, this.reloadB,
       this.field,
-      nav('download', 'İndirilenler', e => this.showPanel('downloads', e.currentTarget)),
+      (this.indirmeBtn = nav('download', 'İndirilenler', e => this.indirmeMenusu(e))),
       nav('grid', 'Sekme Genel Bakış', () => this.tabOverview()),
     );
+
+    this.indirmeBtn.hidden = true;
 
     /* --- sidebar --- */
     this.sidebar = h('div.ob-side');
@@ -381,7 +396,7 @@ class OpenBrow {
       if (sec > 3) note.textContent = `${hostOf(url)} — yükleniyor (${sec.toFixed(0)} sn)`;
     }, 400);
 
-    const settle = (ok) => {
+    const settle = (ok, hata) => {
       if (settled) return;
       settled = true;
       clearInterval(ticker);
@@ -389,39 +404,160 @@ class OpenBrow {
       tab.loading = false;
       veil.remove();
       this.setProgress(100);
-      if (ok) tab.title = tab.title || hostOf(url);
+      /* Önceki denemeden kalan "Açılamadı" başlığı yeni sayfaya yapışmasın. */
+      if (ok) { if (tab.hataliydi) { tab.title = ''; tab.hataliydi = false; } tab.title = tab.title || hostOf(url); }
       this.renderTabs();
-      if (!ok) tab.pane.appendChild(this.blockedNotice(tab, url));
-      else this.recordHistory(tab);
+      if (!ok) {
+        tab.title = 'Açılamadı';
+        tab.hataliydi = true;
+        tab.pane.appendChild(this.hataSayfasi(tab, url, hata || { tur: 'unreachable' }));
+      } else this.recordHistory(tab);
       this.syncChrome();
     };
     on(frame, 'load', () => { if (frame.srcdoc) settle(true); });
-    on(frame, 'error', () => settle(false));
-    tab.timer = setTimeout(() => settle(false), 25000);
+    on(frame, 'error', () => settle(false, { tur: 'unreachable' }));
+    tab.timer = setTimeout(() => settle(false, { tur: 'timeout' }), 25000);
 
-    /* HTML'i motordan getir, sonra çerçeveye yaz. */
+    /* Ağ yoksa istek hiç kurulmaz: doğrudan çevrimdışı sayfası. */
+    if (navigator.onLine === false) { settle(false, { tur: 'offline' }); return; }
+
+    /* HTML'i motordan getir, sonra çerçeveye yaz. Motor yapılandırılmış bir
+       hata döndürdüyse (alan adı çözülemedi, sunucuya ulaşılamadı) o hata
+       olduğu gibi hata sayfasına taşınır. */
     tab.abort?.abort();
     tab.abort = new AbortController();
-    fetch(this.proxied(url), { signal: tab.abort.signal })
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); this.setProgress(70); return r.text(); })
-      .then(html => { if (tab.url === url) frame.srcdoc = html; })
-      .catch(e => { if (e.name !== 'AbortError') settle(false); });
+    const basladi = performance.now();
+    /* Sayfa HTML'i önbellekten alınmamalı: içine sürümlü bir betik enjekte
+       ediliyor ve önbellekteki kopya eski betikle geliyor. Sayfanın alt
+       kaynakları bu istekten geçmediği için hız kaybı yok. */
+    fetch(this.proxied(url), { signal: tab.abort.signal, cache: 'no-store' })
+      .then(async r => {
+        const tur = r.headers.get('content-type') || '';
+        if (tur.includes('application/json')) {
+          const j = await r.json().catch(() => null);
+          if (j?.openbrowError) throw Object.assign(new Error(j.ileti), { openbrow: { tur: j.kod } });
+        }
+        if (!r.ok) {
+          const tur2 = r.status === 404 ? 'notfound'
+                     : (r.status === 403 || r.status === 429 || r.status === 451) ? 'blocked'
+                     : r.status >= 500 ? 'server' : 'unreachable';
+          throw Object.assign(new Error('HTTP ' + r.status), { openbrow: { tur: tur2, kod: r.status } });
+        }
+        this.setProgress(70);
+        return r.text();
+      })
+      .then(html => {
+        if (tab.url !== url) return;
+        frame.srcdoc = html;
+        this.yavasMi(performance.now() - basladi, html.length);
+      })
+      .catch(e => {
+        if (e.name === 'AbortError') return;
+        settle(false, e.openbrow || { tur: 'unreachable' });
+      });
 
     if (!tab.title || tab.title === 'Yeni Sekme') tab.title = hostOf(url);
     this.renderTabs();
   }
 
-  blockedNotice(tab, url) {
-    return h('div.ob-blocked',
-      h('div.ob-blocked-card',
-        h('div.ob-blocked-glyph', { html: icon('shield', 30) }),
-        h('div.k-text.t-title2', { text: 'Sayfa açılamadı' }),
-        h('div.k-text.t-callout', { style: { maxWidth: '430px' },
-          text: `${hostOf(url)} yanıt vermedi ya da içeriği reddetti. Adresi denetleyip yeniden deneyin.` }),
-        h('div.k-hstack', { style: { gap: '8px', marginTop: '14px', justifyContent: 'center' } },
-          h('button.k-btn.v-primary.s-sm', { text: 'Yeniden dene', onclick: () => this.reload() }),
-          h('button.k-btn.s-sm', { text: 'Adresi kopyala',
-            onclick: () => { navigator.clipboard?.writeText(url); notify.toast('Kopyalandı', { glyph: '📋' }); } }))));
+  /**
+   * Hata sayfaları. Her başarısızlık aynı "sayfa açılamadı" ekranını
+   * göstermek yerine, ne olduğunu söyleyen ayrı bir sayfaya karşılık gelir —
+   * kullanıcı yapabileceği şeyi ancak böyle bilir.
+   */
+  hataSayfasi(tab, url, hata = {}) {
+    const alan = hostOf(url);
+    const cevrimdisi = navigator.onLine === false;
+
+    const SAYFALAR = {
+      offline: {
+        glyph: 'wifiOff', baslik: 'İnternet bağlantınız yok',
+        govde: 'OpenOS ağa ulaşamıyor. Bağlantınızı denetleyip yeniden deneyin.',
+        ipucu: ['Wi-Fi ya da ethernet bağlantınızı denetleyin', 'Modeminizi yeniden başlatmayı deneyin'],
+      },
+      dns: {
+        glyph: 'search', baslik: `${alan} adresi bulunamadı`,
+        govde: 'Bu alan adı çözülemedi. Yazımında bir hata olabilir ya da site artık yayında olmayabilir.',
+        ipucu: ['Adresin yazımını denetleyin', 'Arama yapmayı deneyin'],
+        aramaOner: true,
+      },
+      unreachable: {
+        glyph: 'plugOff', baslik: `${alan} yanıt vermiyor`,
+        govde: 'Sunucuya ulaşıldı ama yanıt alınamadı. Site geçici olarak kapalı olabilir.',
+        ipucu: ['Birkaç dakika sonra yeniden deneyin'],
+      },
+      notfound: {
+        glyph: 'fileX', baslik: 'Sayfa bulunamadı',
+        govde: `${alan} bu adreste bir sayfa olmadığını bildirdi (404).`,
+        ipucu: ['Adresin sonundaki bölümü denetleyin', 'Sitenin ana sayfasından gezinmeyi deneyin'],
+        anaSayfaOner: true,
+      },
+      blocked: {
+        glyph: 'shield', baslik: `${alan} isteği reddetti`,
+        govde: hata.kod === 429
+          ? `Site çok fazla istek geldiğini bildirdi (429). Bazı büyük siteler OpenBrow'un çıkış sunucusundan gelen isteklere bu yanıtı veriyor.`
+          : `Site bu isteğe izin vermedi (${hata.kod || 403}).`,
+        ipucu: ['Birkaç dakika sonra yeniden deneyin', 'Başka bir site deneyin'],
+      },
+      server: {
+        glyph: 'alert', baslik: `${alan} bir hata verdi`,
+        govde: `Sunucu ${hata.kod || 500} yanıtı döndürdü. Sorun sitenin kendisinde.`,
+        ipucu: ['Daha sonra yeniden deneyin'],
+      },
+      timeout: {
+        glyph: 'clock', baslik: 'Sayfa zamanında yüklenemedi',
+        govde: `${alan} yanıt vermesi çok uzun sürdü.`,
+        ipucu: ['Bağlantınız yavaş olabilir', 'Yeniden denemek çoğu zaman işe yarar'],
+      },
+    };
+
+    const tur = cevrimdisi ? 'offline' : (SAYFALAR[hata.tur] ? hata.tur : 'unreachable');
+    const s0 = SAYFALAR[tur];
+
+    return h('div.ob-error',
+      h('div.ob-error-card',
+        h('div.ob-error-glyph', { html: icon(hasIcon(s0.glyph) ? s0.glyph : 'alert', 34) }),
+        h('div.k-text.t-title2', { text: s0.baslik }),
+        h('div.k-text.t-callout.ob-error-body', { text: s0.govde }),
+        h('div.ob-error-url', { text: url }),
+        s0.ipucu?.length
+          ? h('ul.ob-error-tips', ...s0.ipucu.map(t => h('li', { text: t })))
+          : null,
+        h('div.k-hstack.ob-error-acts',
+          h('button.k-btn.v-primary.s-sm', { html: icon('refresh', 13), text: ' Yeniden dene',
+            onclick: () => this.reload() }),
+          s0.aramaOner
+            ? h('button.k-btn.s-sm', { html: icon('search', 13), text: ' Bunu ara',
+                onclick: () => this.go('openos://ara?q=' + encodeURIComponent(alan)) })
+            : null,
+          s0.anaSayfaOner
+            ? h('button.k-btn.s-sm', { html: icon('home', 13), text: ' Ana sayfa',
+                onclick: () => { try { this.go(new URL(url).origin); } catch {} } })
+            : null,
+          h('button.k-btn.v-ghost.s-sm', { html: icon('copy', 13), text: ' Adresi kopyala',
+            onclick: () => { clipboard.write(url, { kaynak: 'openbrow' }); notify.toast('Kopyalandı', { glyph: '📋' }); } })),
+        h('div.ob-error-code', { text: `OPENBROW_${tur.toUpperCase()}${hata.kod ? '_' + hata.kod : ''}` })));
+  }
+
+  /** Eski çağrı adı korunuyor. */
+  blockedNotice(tab, url) { return this.hataSayfasi(tab, url, { tur: 'unreachable' }); }
+
+  /**
+   * Bağlantı yavaşsa kullanıcıya bir kez haber verilir. Her sayfada
+   * yinelemek sinir bozucu olur; oturumda bir kez ve yalnızca üst üste
+   * yavaş ölçüm alındığında gösterilir.
+   */
+  yavasMi(sure, boyut) {
+    const hiz = boyut / Math.max(1, sure / 1000);       /* bayt/sn */
+    this.yavasSayac = (sure > 4500 || hiz < 24000) ? (this.yavasSayac || 0) + 1 : 0;
+    if (this.yavasSayac >= 2 && !this.yavasUyarildi) {
+      this.yavasUyarildi = true;
+      notify.post({
+        title: 'Bağlantınız yavaş',
+        body: 'Sayfalar geç açılıyor. Görselleri kapatmak yükleme süresini kısaltabilir.',
+        glyph: 'wifi', timeout: 7000,
+      });
+    }
   }
 
   back() { const t = this.active; if (t && t.hi > 0) { t.hi--; t.url = t.history[t.hi]; this.render(t); this.syncChrome(); } }
@@ -692,17 +828,111 @@ class OpenBrow {
     ];
   }
 
-  linkMenu(url, x, y) {
-    menu([
+  linkMenu(url, x, y) { menu(this.linkMenuItems(url), { x, y }); }
+
+  linkMenuItems(url) {
+    return [
       { header: pretty(url) },
       { label: 'Aç', glyph: 'arrowR', run: () => this.go(url) },
       { label: 'Yeni sekmede aç', glyph: 'plus', run: () => this.newTab(url, { focus: true }) },
       { label: 'Gizli sekmede aç', glyph: 'eye', run: () => this.newTab(url, { focus: true, private: true }) },
       '-',
-      { label: 'Bağlantıyı kopyala', glyph: 'link', run: () => navigator.clipboard?.writeText(url) },
+      { label: 'Bağlantıyı farklı kaydet…', glyph: 'download', run: () => this.indir(url) },
+      { label: 'Bağlantıyı kopyala', glyph: 'link',
+        run: () => { clipboard.write(url, { kaynak: 'openbrow' }); notify.toast('Kopyalandı', { glyph: '📋' }); } },
       { label: 'Yer imlerine ekle', glyph: 'star', run: () => {
         this.bookmarks.unshift({ title: hostOf(url), url, added: Date.now() }); this.saveSoon(); this.renderSidebar(); } },
-    ], { x, y });
+    ];
+  }
+
+  /* ==================== indirmeler ==================== */
+  /**
+   * Dosyayı motor üzerinden alıp sanal diskteki İndirilenler klasörüne yazar.
+   * Ana bilgisayarın diskine hiçbir şey inmez — indirilen her şey OpenOS'un
+   * kendi dosya sisteminde kalır ve Finder'dan görünür.
+   */
+  async indir(url, onerilenAd) {
+    const klasor = VFS.join(vfs.home, 'İndirilenler');
+    vfs.mkdir(klasor);
+    let ad = onerilenAd || '';
+    if (!ad) {
+      try { ad = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || ''); } catch {}
+    }
+    if (!ad) ad = 'indirilen-dosya';
+    const hedef = vfs.unique(VFS.join(klasor, ad));
+
+    const kayit = { url, ad: VFS.basename(hedef), yol: hedef, durum: 'iniyor', boyut: 0, baslangic: Date.now() };
+    this.indirmeler = this.indirmeler || this.downloads || [];
+    this.indirmeler.unshift(kayit);
+    this.indirmePaneliCiz();
+    notify.toast(`İndiriliyor: ${kayit.ad}`, { glyph: '⬇️' });
+
+    try {
+      const r = await fetch(`${OPENBROW_ENGINE}/download?url=${encodeURIComponent(url)}`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const tur = r.headers.get('content-type') || '';
+      const buf = await r.arrayBuffer();
+      kayit.boyut = buf.byteLength;
+
+      /* Metin türleri olduğu gibi, ikili türler veri URL'i olarak saklanır —
+         sanal dosya sistemi metin tutuyor. */
+      if (/^text\/|json|xml|javascript|csv/.test(tur)) {
+        vfs.write(hedef, new TextDecoder().decode(buf), { kaynak: url, tur });
+      } else {
+        let ikili = '';
+        const bayt = new Uint8Array(buf);
+        for (let i = 0; i < bayt.length; i += 0x8000) {
+          ikili += String.fromCharCode.apply(null, bayt.subarray(i, i + 0x8000));
+        }
+        vfs.write(hedef, `data:${tur || 'application/octet-stream'};base64,${btoa(ikili)}`,
+                  { kaynak: url, tur, encoding: 'dataurl' });
+      }
+
+      kayit.durum = 'bitti';
+      this.indirmePaneliCiz();
+      notify.post({
+        title: 'İndirme tamamlandı',
+        body: `${kayit.ad} · ${fmtBytes(kayit.boyut)}`,
+        glyph: 'download',
+        actions: [{ label: 'Finder’da göster', run: () => this.ctx.openApp('finder', { path: klasor }) }],
+      });
+    } catch (e) {
+      kayit.durum = 'hata';
+      kayit.hata = e.message;
+      this.indirmePaneliCiz();
+      notify.post({ title: 'İndirme başarısız', body: `${kayit.ad} — ${e.message}`, glyph: 'alert' });
+    }
+    return kayit;
+  }
+
+  /** Adres çubuğunun yanındaki indirme listesi. */
+  indirmePaneliCiz() {
+    if (!this.indirmeBtn) return;
+    const iniyor = (this.indirmeler || []).some(i => i.durum === 'iniyor');
+    this.indirmeBtn.hidden = !(this.indirmeler || []).length;
+    this.indirmeBtn.classList.toggle('iniyor', iniyor);
+  }
+
+  indirmeMenusu(e) {
+    const liste = this.indirmeler || [];
+    if (!liste.length) return menu([{ header: 'İndirmeler' }, { label: 'Henüz indirme yok', disabled: true }],
+                                   { anchor: e?.currentTarget });
+    const klasor = VFS.join(vfs.home, 'İndirilenler');
+    menu([
+      { header: 'İndirmeler' },
+      ...liste.slice(0, 10).map(i => ({
+        label: i.ad,
+        glyph: i.durum === 'bitti' ? 'check' : i.durum === 'hata' ? 'alert' : 'download',
+        hint: i.durum === 'bitti' ? fmtBytes(i.boyut) : i.durum === 'hata' ? 'başarısız' : 'iniyor…',
+        disabled: i.durum !== 'bitti',
+        run: () => this.ctx.os.openPath(i.yol),
+      })),
+      '-',
+      { label: 'İndirilenler klasörünü aç', glyph: 'folder',
+        run: () => this.ctx.openApp('finder', { path: klasor }) },
+      { label: 'Listeyi temizle', glyph: 'trash',
+        run: () => { this.indirmeler = []; this.indirmePaneliCiz(); } },
+    ], { anchor: e?.currentTarget });
   }
 
   /* ================== proxy bridge ================== */
@@ -721,6 +951,8 @@ class OpenBrow {
       } else if (d.type === 'navigate') {
         if (d.newTab) this.newTab(d.url, { focus: true, private: tab.private });
         else { this.selectTab(tab); this.go(d.url, { tab }); }
+      } else if (d.type === 'download') {
+        this.indir(d.url, d.name);
       } else if (d.type === 'contextmenu') {
         const r = tab.frame.getBoundingClientRect();
         const x = r.left + (d.x || 0), y = r.top + (d.y || 0);

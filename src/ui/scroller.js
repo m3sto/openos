@@ -44,8 +44,22 @@ class Scroller {
         host.style[k] = cs[k];
       }
       if (cs.maxHeight !== 'none') host.style.maxHeight = cs.maxHeight;
-      const üst = el.parentElement && getComputedStyle(el.parentElement).display;
-      if (üst && !/flex|grid/.test(üst) && cs.height !== 'auto') host.style.height = cs.height;
+
+      /* Mutlak konumlu bir öğeyi sarmak onun konumlandırma bağlamını
+         değiştirir: kabuk normal akışa girer, öğe de artık kabuğa göre
+         konumlanır ve sayfanın çok altına düşer. Konumu kabuğa devret,
+         öğeyi kabuğun içinde sıradan bir kutu yap. */
+      if (cs.position === 'absolute' || cs.position === 'fixed' || cs.position === 'sticky') {
+        host.style.position = cs.position;
+        for (const k of ['top', 'right', 'bottom', 'left', 'zIndex']) host.style[k] = cs[k];
+        el.style.position = 'relative';
+        el.style.top = el.style.right = el.style.bottom = el.style.left = 'auto';
+        el.style.width = '100%';
+        el.style.height = '100%';
+      } else {
+        const üst = el.parentElement && getComputedStyle(el.parentElement).display;
+        if (üst && !/flex|grid/.test(üst) && cs.height !== 'auto') host.style.height = cs.height;
+      }
       el.parentNode.insertBefore(host, el);
       host.appendChild(el);
     }
