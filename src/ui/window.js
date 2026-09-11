@@ -19,6 +19,7 @@ export class Win {
     this.args = opts.args || {};
     this.state = 'normal';
     this.title = opts.title || app.name;
+    this.acilis = Date.now();          /* Görev Yöneticisi çalışma süresini buradan okur */
 
     /* The layer can report 0 while the tab is hidden or mid-resize; never let
        that collapse a window to a negative size. */

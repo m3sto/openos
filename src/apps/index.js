@@ -24,11 +24,12 @@ import paint from './paint.js';
 import weather from './weather.js';
 import capture from './capture.js';
 import misc from './misc.js';
+import taskmanager from './taskmanager.js';
 
 export const BUILTIN = [
   finder, terminal, studio, settingsApp, texteditor, notes, calculator,
   browser, photos, calendar, appstore, cloudapp, agenthub, graphics,
-  clock, weather, storage, paint, ...capture, ...misc,
+  clock, weather, storage, paint, taskmanager, ...capture, ...misc,
 ];
 
 export function registerBuiltins() {
