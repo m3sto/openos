@@ -827,10 +827,14 @@ view {
 - Değişiklikten sonra görünümün yenilenmesi için `state` değişkenine atayın;
   zamanlayıcı içinde ayrıca `refresh()` çağırın.
 - Yerleşik simge adlarını uydurmayın — bilmiyorsanız `"sparkles"` kullanın.
-  Güvenli olanlar: `check` `x` `plus` `search` `folder` `file` `fileText`
-  `code` `package` `bolt` `clock` `calendar` `music` `image` `globe`
-  `terminal` `settings` `trash` `heart` `star` `grid` `list` `info` `alert`
-  `play` `save` `upload` `download` `refresh` `home` `user` `sparkles`.
+  Güvenli olanlar: `check` `x` `plus` `search` `folder` `folderOpen` `file`
+  `fileText` `fileCode` `code` `package` `bolt` `clock` `calendar` `music`
+  `image` `globe` `terminal` `settings` `trash` `heart` `star` `grid` `list`
+  `info` `alert` `play` `save` `upload` `download` `refresh` `home` `user`
+  `sparkles` `calc` `chart` `lock` `wifi` `window` `copy` `clipboard`.
+
+  Adı doğrulamak için terminalde `oshc check` yetmez — bilinmeyen simge
+  sessizce boş çizilir. Emin değilseniz `sparkles` kullanın.
 - Renkler `#rrggbb` biçiminde; `tint` **iki** renkli bir dizidir.
 - Türkçe karakterli değişken adı kullanmayın; metinlerde serbesttir.
 

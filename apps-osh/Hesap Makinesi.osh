@@ -1,0 +1,134 @@
+app {
+  name: "Hesap Makinesi"
+  id: "hesap-makinesi"
+  version: "1.0.0"
+  icon: "calc"
+  tint: ["#48484a", "#1c1c1e"]
+  width: 300
+  height: 420
+  author: "OpenOS"
+  about: "Dört işlem, yüzde ve işaret; geçmişi kalıcı."
+}
+
+state ekran = "0"
+state onceki = nil
+state islem = nil
+state yeniGiris = true
+state gecmis = store_get("gecmis", [])
+
+fn basamak(d) {
+  if yeniGiris {
+    ekran = d
+    yeniGiris = false
+  } else {
+    ekran = ekran == "0" ? d : ekran + d
+  }
+}
+
+fn nokta() {
+  if yeniGiris { ekran = "0."  yeniGiris = false  return }
+  if not contains(ekran, ".") { ekran = ekran + "." }
+}
+
+fn hesapla(a, op, b) {
+  return match op {
+    "+" => a + b,
+    "−" => a - b,
+    "×" => a * b,
+    "÷" => b == 0 ? nil : a / b,
+    _   => b
+  }
+}
+
+fn islemSec(op) {
+  if not is_nil(islem) and not yeniGiris { esittir() }
+  onceki = num(ekran)
+  islem = op
+  yeniGiris = true
+}
+
+fn esittir() {
+  if is_nil(islem) or is_nil(onceki) { return }
+  let b = num(ekran)
+  let sonuc = hesapla(onceki, islem, b)
+
+  if is_nil(sonuc) {
+    ekran = "Tanımsız"
+    toast("Sıfıra bölünemez")
+  } else {
+    let satir = "${format(onceki, 0)} ${islem} ${format(b, 0)} = ${format(sonuc, 0)}"
+    unshift(gecmis, satir)
+    if len(gecmis) > 20 { gecmis = slice(gecmis, 0, 20) }
+    store_set("gecmis", gecmis)
+    ekran = str(round(sonuc, 8))
+  }
+  onceki = nil
+  islem = nil
+  yeniGiris = true
+}
+
+fn temizle() {
+  ekran = "0"  onceki = nil  islem = nil  yeniGiris = true
+}
+
+fn isaret() { ekran = str(num(ekran) * -1) }
+fn yuzde()  { ekran = str(num(ekran) / 100) }
+
+fn gecmisiTemizle() {
+  confirm("Geçmiş silinsin mi?", fn(ok) {
+    if not ok { return }
+    gecmis = []
+    store_set("gecmis", gecmis)
+    refresh()
+  })
+}
+
+view {
+  VStack(spacing: 0, grow: true) {
+    VStack(spacing: 2, padding: 18, align: "end", justify: "end", grow: true) {
+      Caption(is_nil(islem) ? " " : "${format(onceki, 0)} ${islem}")
+      Label(ekran, style: "display", weight: 300)
+    }
+
+    VStack(spacing: 8, padding: 14) {
+      HStack(spacing: 8) {
+        Button("AC", size: "lg", grow: true, onClick: temizle)
+        Button("±", size: "lg", grow: true, onClick: isaret)
+        Button("%", size: "lg", grow: true, onClick: yuzde)
+        Button("÷", size: "lg", variant: "tinted", grow: true, onClick: fn() { islemSec("÷") })
+      }
+      HStack(spacing: 8) {
+        Button("7", size: "lg", grow: true, onClick: fn() { basamak("7") })
+        Button("8", size: "lg", grow: true, onClick: fn() { basamak("8") })
+        Button("9", size: "lg", grow: true, onClick: fn() { basamak("9") })
+        Button("×", size: "lg", variant: "tinted", grow: true, onClick: fn() { islemSec("×") })
+      }
+      HStack(spacing: 8) {
+        Button("4", size: "lg", grow: true, onClick: fn() { basamak("4") })
+        Button("5", size: "lg", grow: true, onClick: fn() { basamak("5") })
+        Button("6", size: "lg", grow: true, onClick: fn() { basamak("6") })
+        Button("−", size: "lg", variant: "tinted", grow: true, onClick: fn() { islemSec("−") })
+      }
+      HStack(spacing: 8) {
+        Button("1", size: "lg", grow: true, onClick: fn() { basamak("1") })
+        Button("2", size: "lg", grow: true, onClick: fn() { basamak("2") })
+        Button("3", size: "lg", grow: true, onClick: fn() { basamak("3") })
+        Button("+", size: "lg", variant: "tinted", grow: true, onClick: fn() { islemSec("+") })
+      }
+      HStack(spacing: 8) {
+        Button("0", size: "lg", grow: true, onClick: fn() { basamak("0") })
+        Button(",", size: "lg", grow: true, onClick: nokta)
+        Button("=", size: "lg", variant: "primary", grow: true, onClick: esittir)
+      }
+    }
+
+    if len(gecmis) > 0 {
+      Divider()
+      HStack(spacing: 8, padding: 10) {
+        Caption("Son: ${gecmis[0]}")
+        Spacer()
+        Button("Temizle", variant: "plain", onClick: gecmisiTemizle)
+      }
+    }
+  }
+}

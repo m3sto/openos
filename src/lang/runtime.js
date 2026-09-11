@@ -328,9 +328,19 @@ export const COMPONENTS = {
     return applyCommon(n, p);
   },
 
-  Empty: (el) => h('div.k-empty',
-    h('div.glyph', { text: str(el.props.glyph ?? '📭') }),
-    h('div.k-text.t-callout', { text: str(el.args[0] ?? 'Burası boş') })),
+  /* `glyph` bir yerleşik simge adı ya da bir emoji olabilir. Ad verildiğinde
+     metin olarak basmak — "fileText" yazmak — yanlış; simge çizilmeli. */
+  Empty: (el) => {
+    const g = str(el.props.glyph ?? '');
+    const gorsel = g && hasIcon(g)
+      ? h('div.glyph', { html: icon(g, 30, 1.6), style: { color: 'var(--text-3)' } })
+      : h('div.glyph', { text: g || '📭' });
+    return applyCommon(h('div.k-empty',
+      gorsel,
+      h('div.k-text.t-callout', { text: str(el.args[0] ?? el.props.title ?? 'Burası boş') }),
+      el.props.detail ? h('div.k-text.t-caption', { text: str(el.props.detail) }) : null,
+    ), el.props);
+  },
 
   Tabs: (el, api) => {
     const p = el.props;

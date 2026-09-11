@@ -285,7 +285,13 @@ export class Kernel {
 
   mountOshApp(ctx, path) {
     const host = h('div', { style: { position: 'relative', flex: '1', minWidth: 0, display: 'flex' } });
-    const inner = h('div', { style: { flex: '1', minWidth: 0, position: 'relative', overflow: 'auto' } });
+    /* Esnek kap: kök bileşeni `grow: true` yazdığında pencereyi gerçekten
+       doldurabilsin. Blok kap olduğunda `flex` çocukta hiçbir işe yaramıyor,
+       görünüm içerik boyunda kalıyordu. */
+    const inner = h('div', { style: {
+      flex: '1', minWidth: 0, minHeight: 0, position: 'relative', overflow: 'auto',
+      display: 'flex', flexDirection: 'column',
+    } });
     host.appendChild(inner);
     import('../lang/oshapp.js').then(({ OshApp }) => {
       const runner = new OshApp({

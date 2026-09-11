@@ -1,0 +1,172 @@
+app {
+  name: "Notlar"
+  id: "notlar-osh"
+  version: "1.0.0"
+  icon: "fileText"
+  tint: ["#ffd60a", "#e0a800"]
+  width: 640
+  height: 480
+  author: "OpenOS"
+  about: "Arama, etiket ve kalıcı depo ile basit not defteri."
+}
+
+type Not {
+  id = ""
+  baslik = ""
+  govde = ""
+  guncel = 0
+
+  fn ozet() {
+    let t = trim(self.govde)
+    return t == "" ? "boş not" : slice(replace(t, "\n", " "), 0, 70)
+  }
+}
+
+state notlar = []
+state secili = nil
+state arama = ""
+state taslak = ""
+
+# Depodan gelen düz nesneler tipe sarılır ki yöntemleri çalışsın.
+fn yukle() {
+  let ham = store_get("notlar", [])
+  notlar = map(ham, fn(n) => Not(id: n.id, baslik: n.baslik, govde: n.govde, guncel: n.guncel))
+  if len(notlar) > 0 { secili = notlar[0].id  taslak = notlar[0].govde }
+}
+
+fn kaydet() {
+  store_set("notlar", map(notlar, fn(n) => { id: n.id, baslik: n.baslik, govde: n.govde, guncel: n.guncel }))
+}
+
+fn seciliNot() {
+  return find(notlar, fn(n) => n.id == secili)
+}
+
+fn yeni() {
+  let n = Not(id: uuid(), baslik: "Adsız not", govde: "", guncel: now())
+  unshift(notlar, n)
+  secili = n.id
+  taslak = ""
+  kaydet()
+}
+
+fn yaz(v) {
+  taslak = v
+  let n = seciliNot()
+  if is_nil(n) { return }
+  n.govde = v
+  let ilk = trim(lines(v)[0] ?? "")
+  n.baslik = ilk == "" ? "Adsız not" : slice(ilk, 0, 40)
+  n.guncel = now()
+  kaydet()
+}
+
+fn sec(n) {
+  secili = n.id
+  taslak = n.govde
+}
+
+fn sil(n) {
+  confirm("“${n.baslik}” silinsin mi?", fn(ok) {
+    if not ok { return }
+    notlar = filter(notlar, fn(x) => x.id != n.id)
+    if secili == n.id {
+      secili = len(notlar) > 0 ? notlar[0].id : nil
+      taslak = len(notlar) > 0 ? notlar[0].govde : ""
+    }
+    kaydet()
+    refresh()
+  })
+}
+
+fn disaAktar() {
+  let n = seciliNot()
+  if is_nil(n) { return toast("Önce bir not seçin") }
+  dialog_save(fn(yol) {
+    if is_nil(yol) { return }
+    try {
+      fs_write(yol, n.govde)
+      toast("Kaydedildi: ${path_name(yol)}")
+    } catch e {
+      toast("Yazılamadı: ${e.message}")
+    }
+  }, { ad: "${n.baslik}.txt", uzantilar: ["txt", "md"] })
+}
+
+fn iceAktar() {
+  dialog_open(fn(yol) {
+    if is_nil(yol) { return }
+    let icerik = fs_read(yol)
+    if is_nil(icerik) { return toast("Dosya okunamadı") }
+    let n = Not(id: uuid(), baslik: path_name(yol), govde: icerik, guncel: now())
+    unshift(notlar, n)
+    secili = n.id
+    taslak = icerik
+    kaydet()
+    refresh()
+  }, { uzantilar: ["txt", "md"] })
+}
+
+fn gorunen() {
+  let q = lower(trim(arama))
+  if q == "" { return notlar }
+  return filter(notlar, fn(n) => contains(lower(n.baslik + " " + n.govde), q))
+}
+
+yukle()
+
+view {
+  HStack(spacing: 0, grow: true) {
+
+    VStack(spacing: 0, width: 210) {
+      HStack(spacing: 6, padding: 10) {
+        TextField(arama, placeholder: "Ara", bind: "arama", icon: "search", grow: true)
+        Button("", icon: "plus", variant: "tinted", onClick: yeni)
+      }
+      Divider()
+
+      ScrollView(grow: true) {
+        VStack(spacing: 2, padding: 6) {
+          if len(gorunen()) == 0 {
+            Empty(arama == "" ? "Henüz not yok" : "Eşleşme yok", glyph: "fileText")
+          }
+          for n in gorunen() {
+            ListItem(n.baslik,
+                     subtitle: n.ozet(),
+                     glyph: n.id == secili ? "check" : "fileText",
+                     onClick: fn() { sec(n) })
+          }
+        }
+      }
+
+      Divider()
+      HStack(spacing: 6, padding: 8) {
+        Caption("${len(notlar)} not")
+        Spacer()
+        Button("", icon: "download", variant: "ghost", tip: "İçe aktar", onClick: iceAktar)
+        Button("", icon: "upload", variant: "ghost", tip: "Dışa aktar", onClick: disaAktar)
+      }
+    }
+
+    Divider()
+
+    VStack(spacing: 0, grow: true) {
+      if is_nil(secili) {
+        VStack(spacing: 10, grow: true, justify: "center", align: "center") {
+          Empty("Soldan bir not seçin ya da yeni oluşturun", glyph: "fileText")
+          Button("Yeni not", variant: "primary", onClick: yeni)
+        }
+      } else {
+        HStack(spacing: 8, padding: 10) {
+          Label(seciliNot()?.baslik ?? "", style: "headline")
+          Spacer()
+          Caption(date_relative(seciliNot()?.guncel ?? now()))
+          Button("", icon: "trash", variant: "ghost", onClick: fn() { sil(seciliNot()) })
+        }
+        Divider()
+        TextArea(taslak, placeholder: "Yazmaya başlayın…", grow: true,
+                 onChange: fn(v) { yaz(v) })
+      }
+    }
+  }
+}
