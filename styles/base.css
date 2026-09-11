@@ -1,0 +1,200 @@
+/* ==========================================================================
+   OpenOS · base.css — design tokens, reset, primitives
+   ========================================================================== */
+
+:root {
+  /* ---- accent (overridden by settings) ---- */
+  --accent: #0a84ff;
+  --accent-hi: #4aa8ff;
+  --accent-lo: #0060df;
+  --accent-fg: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+
+  /* ---- surfaces (light) ---- */
+  --bg: #eceef2;
+  --surface: #ffffff;
+  --surface-2: #f5f6f8;
+  --surface-3: #ebedf0;
+  --glass: rgba(255, 255, 255, 0.66);
+  --glass-strong: rgba(255, 255, 255, 0.82);
+  --glass-dim: rgba(246, 247, 250, 0.55);
+  --chrome: rgba(250, 250, 252, 0.72);
+  --hairline: rgba(0, 0, 0, 0.10);
+  --hairline-soft: rgba(0, 0, 0, 0.055);
+  --inset-hi: rgba(255, 255, 255, 0.75);
+
+  /* ---- text ---- */
+  --text: #17181c;
+  --text-2: #5b6068;
+  --text-3: #8b9099;
+  --text-inv: #ffffff;
+
+  /* ---- semantic ---- */
+  --red: #ff453a;
+  --orange: #ff9f0a;
+  --yellow: #ffd60a;
+  --green: #30d158;
+  --mint: #63e6e2;
+  --teal: #40c8e0;
+  --cyan: #64d2ff;
+  --blue: #0a84ff;
+  --indigo: #5e5ce6;
+  --purple: #bf5af2;
+  --pink: #ff375f;
+  --brown: #ac8e68;
+  --gray: #8e8e93;
+
+  /* ---- geometry ---- */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 11px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-2xl: 28px;
+  --r-full: 999px;
+
+  /* ---- elevation ---- */
+  --sh-1: 0 1px 2px rgba(0,0,0,.06), 0 1px 1px rgba(0,0,0,.04);
+  --sh-2: 0 4px 14px rgba(0,0,0,.09), 0 1px 3px rgba(0,0,0,.06);
+  --sh-3: 0 12px 32px rgba(0,0,0,.14), 0 2px 8px rgba(0,0,0,.07);
+  --sh-win: 0 28px 70px rgba(0,0,0,.28), 0 10px 24px rgba(0,0,0,.16), 0 0 0 .5px rgba(0,0,0,.16);
+  --sh-win-blur: 0 16px 40px rgba(0,0,0,.16), 0 0 0 .5px rgba(0,0,0,.12);
+  --sh-pop: 0 16px 44px rgba(0,0,0,.24), 0 0 0 .5px rgba(0,0,0,.12);
+
+  /* ---- motion ---- */
+  --spring: cubic-bezier(.32, 1.28, .38, 1);
+  --spring-soft: cubic-bezier(.34, 1.12, .42, 1);
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-in: cubic-bezier(.55, 0, 1, .45);
+  --t-fast: 140ms;
+  --t: 240ms;
+  --t-slow: 420ms;
+
+  /* ---- layout ---- */
+  --menubar-h: 28px;
+  --dock-h: 66px;
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+          "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", ui-monospace,
+          Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* ---- dark ---- */
+html[data-theme="dark"] {
+  --bg: #0d0d0f;
+  --surface: #1e1e22;
+  --surface-2: #26262b;
+  --surface-3: #303036;
+  --glass: rgba(38, 38, 43, 0.62);
+  --glass-strong: rgba(30, 30, 34, 0.82);
+  --glass-dim: rgba(24, 24, 28, 0.55);
+  --chrome: rgba(30, 30, 34, 0.68);
+  --hairline: rgba(255, 255, 255, 0.12);
+  --hairline-soft: rgba(255, 255, 255, 0.07);
+  --inset-hi: rgba(255, 255, 255, 0.08);
+  --text: #f2f3f5;
+  --text-2: #a9adb6;
+  --text-3: #72767f;
+  --sh-1: 0 1px 2px rgba(0,0,0,.4);
+  --sh-2: 0 6px 18px rgba(0,0,0,.45);
+  --sh-3: 0 16px 40px rgba(0,0,0,.55);
+  --sh-win: 0 32px 80px rgba(0,0,0,.66), 0 12px 28px rgba(0,0,0,.5), 0 0 0 .5px rgba(255,255,255,.1);
+  --sh-win-blur: 0 18px 44px rgba(0,0,0,.45), 0 0 0 .5px rgba(255,255,255,.07);
+  --sh-pop: 0 18px 50px rgba(0,0,0,.6), 0 0 0 .5px rgba(255,255,255,.09);
+}
+
+/* ==================== reset ==================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  background: #000;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overscroll-behavior: none;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+/* Selection is off system-wide; it is opted back in per surface. */
+.selectable, .selectable *, input, textarea, [contenteditable="true"] {
+  user-select: text; -webkit-user-select: text; cursor: auto;
+}
+img, svg, canvas { -webkit-user-drag: none; user-drag: none; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+input, textarea { user-select: text; -webkit-user-select: text; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+h1,h2,h3,h4,h5,h6,p { margin: 0; }
+img { max-width: 100%; display: block; }
+a { color: var(--accent); text-decoration: none; }
+::selection { background: var(--accent-soft); }
+
+/* scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--text-3) transparent; }
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 55%, transparent);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
+
+/* ==================== root stage ==================== */
+#os-root { position: fixed; inset: 0; overflow: hidden; background: #000; }
+#stage  { position: absolute; inset: 0; }
+
+.layer { position: absolute; inset: 0; }
+
+/* ==================== utility ==================== */
+.blur      { backdrop-filter: blur(28px) saturate(180%); -webkit-backdrop-filter: blur(28px) saturate(180%); }
+.blur-lg   { backdrop-filter: blur(48px) saturate(190%); -webkit-backdrop-filter: blur(48px) saturate(190%); }
+.blur-sm   { backdrop-filter: blur(14px) saturate(170%); -webkit-backdrop-filter: blur(14px) saturate(170%); }
+.no-select { user-select: none; -webkit-user-select: none; }
+.hidden    { display: none !important; }
+.grow      { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.row       { display: flex; align-items: center; }
+.col       { display: flex; flex-direction: column; }
+.center    { display: flex; align-items: center; justify-content: center; }
+.mono      { font-family: var(--mono); }
+.ellipsis  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@keyframes os-fade-in  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes os-fade-out { from { opacity: 1 } to { opacity: 0 } }
+@keyframes os-pop-in {
+  0%   { opacity: 0; transform: scale(.88) translateY(8px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes os-slide-down { from { opacity:0; transform: translateY(-10px) } to { opacity:1; transform:none } }
+@keyframes os-spin { to { transform: rotate(360deg) } }
+@keyframes os-shake {
+  10%,90% { transform: translateX(-2px) } 20%,80% { transform: translateX(4px) }
+  30%,50%,70% { transform: translateX(-7px) } 40%,60% { transform: translateX(7px) }
+}
+@keyframes os-bounce {
+  0%,100% { transform: translateY(0) }
+  30%     { transform: translateY(-22px) }
+  55%     { transform: translateY(0) }
+  72%     { transform: translateY(-9px) }
+  88%     { transform: translateY(0) }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

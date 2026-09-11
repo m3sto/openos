@@ -1,0 +1,130 @@
+/* ==========================================================================
+   OpenOS · window.css — window manager chrome
+   ========================================================================== */
+
+.win-layer { position: absolute; inset: 0; pointer-events: none; z-index: 100; }
+
+.win {
+  position: absolute; pointer-events: auto; display: flex; flex-direction: column;
+  min-width: 260px; min-height: 150px;
+  background: var(--surface); color: var(--text);
+  border-radius: var(--r-lg); overflow: hidden;
+  box-shadow: var(--sh-win-blur);
+  transition: box-shadow var(--t) var(--ease);
+  animation: win-open .3s var(--spring-soft) both;
+  will-change: transform;
+}
+@keyframes win-open {
+  from { opacity: 0; transform: scale(.94) translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.win.focused { box-shadow: var(--sh-win); }
+.win.closing { animation: win-close .18s var(--ease-in) forwards; }
+@keyframes win-close { to { opacity: 0; transform: scale(.95); } }
+.win.minimizing { transition: transform .35s var(--ease-in), opacity .35s var(--ease-in); opacity: 0; }
+.win.no-anim { animation: none; }
+.win.dragging, .win.resizing { transition: none; }
+.win.maxed { border-radius: 0; }
+.win.snapping { transition: left .2s var(--spring), top .2s var(--spring), width .2s var(--spring), height .2s var(--spring); }
+
+/* ---- title bar ---- */
+.win-bar {
+  height: 38px; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 0 11px;
+  background: var(--chrome); backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+  cursor: default; user-select: none;
+}
+.win-bar.tall { height: 46px; }
+.win:not(.focused) .win-bar { opacity: .82; }
+.traffic { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
+.traffic button {
+  width: 12px; height: 12px; border-radius: 50%; position: relative;
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.12);
+  transition: filter var(--t-fast);
+}
+.traffic .c { background: #ff5f57; } .traffic .m { background: #febc2e; } .traffic .z { background: #28c840; }
+.win:not(.focused) .traffic button { background: color-mix(in srgb, var(--text-3) 45%, transparent); }
+.traffic button svg { opacity: 0; transition: opacity var(--t-fast); position: absolute; inset: 0; margin: auto; }
+.traffic:hover button svg { opacity: .62; }
+.win-title {
+  position: absolute; left: 0; right: 0; text-align: center; font-size: 12.5px; font-weight: 620;
+  pointer-events: none; color: var(--text); letter-spacing: -.004em;
+}
+.win:not(.focused) .win-title { color: var(--text-3); }
+.win-bar .lead, .win-bar .trail { display: flex; align-items: center; gap: 6px; z-index: 1; }
+.win-bar .trail { margin-left: auto; }
+.win-bar .tbtn {
+  width: 26px; height: 24px; border-radius: 6px; display: grid; place-items: center;
+  color: var(--text-2); transition: background var(--t-fast), color var(--t-fast);
+}
+.win-bar .tbtn:hover { background: var(--hairline-soft); color: var(--text); }
+.win-bar .tbtn.on { background: var(--accent-soft); color: var(--accent); }
+
+/* ---- body ---- */
+.win-body { flex: 1; min-height: 0; position: relative; overflow: hidden; display: flex; }
+.win-body > * { min-width: 0; }
+.win.inactive-veil .win-body::after {
+  content: ""; position: absolute; inset: 0; background: transparent; pointer-events: none;
+}
+
+/* ---- resize handles ---- */
+.rz { position: absolute; z-index: 5; }
+.rz.n  { top: -3px; left: 10px; right: 10px; height: 7px; cursor: ns-resize; }
+.rz.s  { bottom: -3px; left: 10px; right: 10px; height: 7px; cursor: ns-resize; }
+.rz.w  { left: -3px; top: 10px; bottom: 10px; width: 7px; cursor: ew-resize; }
+.rz.e  { right: -3px; top: 10px; bottom: 10px; width: 7px; cursor: ew-resize; }
+.rz.nw { top: -4px; left: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.rz.ne { top: -4px; right: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+.rz.sw { bottom: -4px; left: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+.rz.se { bottom: -4px; right: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+
+/* ---- snap preview ---- */
+.snap-hint {
+  position: absolute; z-index: 90; border-radius: var(--r-lg); pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  backdrop-filter: blur(6px); transition: all .16s var(--ease-out);
+  animation: os-fade-in .12s var(--ease);
+}
+
+/* ---- app layout helpers ---- */
+.app-shell { display: flex; width: 100%; height: 100%; background: var(--surface); }
+.sidebar {
+  width: 194px; flex: 0 0 auto; padding: 8px; overflow: auto;
+  background: var(--glass-dim); backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: inset -.5px 0 0 var(--hairline-soft);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.sidebar .sb-title {
+  font-size: 11px; font-weight: 650; color: var(--text-3); text-transform: uppercase;
+  letter-spacing: .045em; padding: 10px 8px 4px;
+}
+.sidebar .sb-item {
+  display: flex; align-items: center; gap: 8px; height: 27px; padding: 0 8px;
+  border-radius: var(--r-xs); font-size: 12.5px; cursor: default;
+  transition: background var(--t-fast);
+}
+.sidebar .sb-item:hover { background: var(--hairline-soft); }
+.sidebar .sb-item.on { background: color-mix(in srgb, var(--text-3) 24%, transparent); font-weight: 560; }
+.sidebar .sb-item .ic { width: 17px; text-align: center; color: var(--accent); }
+.content { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.toolbar {
+  height: 38px; flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 0 11px;
+  box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+}
+.statusbar {
+  height: 24px; flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 0 11px;
+  font-size: 11px; color: var(--text-3); box-shadow: inset 0 .5px 0 var(--hairline-soft);
+}
+
+/* ---- jöle modu ----
+   While a window is deforming we must not let CSS transitions fight the
+   per-frame transform, and the shadow follows the shape. */
+.win.jelly {
+  transition: box-shadow var(--t) var(--ease) !important;
+  will-change: transform, border-radius;
+}
+.win.jelly .win-bar { border-radius: inherit; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.win.jelly.focused { box-shadow: var(--sh-win), 0 0 36px -12px color-mix(in srgb, var(--accent) 40%, transparent); }
