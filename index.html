@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>OpenOS — tarayıcıda çalışan sanal işletim sistemi</title>
+<meta name="description" content="Pencere yöneticisi, dosya sistemi, kendi tarayıcısı ve kendi programlama dili olan, tamamen tarayıcıda çalışan bir masaüstü ortamı. Yapay zekâ ajanları için de tasarlandı.">
+<meta property="og:title" content="OpenOS">
+<meta property="og:description" content="Tarayıcıda çalışan sanal işletim sistemi. Kendi dili OpenSharp, kendi tarayıcısı OpenBrow, kendi bulutu OpenOS Cloud.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0a84ff">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='none' stroke='%230a84ff' stroke-width='10'/><path d='M36 62L64 38' stroke='%2364d2ff' stroke-width='10' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="site/site.css">
+</head>
+<body>
+<div class="aurora" aria-hidden="true"></div>
+
+<header class="nav">
+  <a class="brand" href="./">
+    <svg viewBox="0 0 100 100" width="28" height="28" aria-hidden="true">
+      <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="9"/>
+      <path d="M36 62L64 38" stroke="var(--accent)" stroke-width="9" stroke-linecap="round"/>
+    </svg>
+    <span>OpenOS</span>
+  </a>
+  <nav class="navlinks">
+    <a href="#ozellikler">Özellikler</a>
+    <a href="#opensharp">OpenSharp</a>
+    <a href="#openbrow">OpenBrow</a>
+    <a href="#cloud">Cloud</a>
+    <a href="#ajanlar">Ajanlar</a>
+  </nav>
+  <div class="navright">
+    <button class="ghost" id="themeBtn" type="button" title="Görünüm">◐</button>
+    <a class="ghost" href="https://github.com/m3sto/openos" rel="noopener">GitHub</a>
+    <a class="btn primary" href="os/">Başlat</a>
+  </div>
+</header>
+
+<main>
+  <!-- ============================ hero ============================ -->
+  <section class="hero">
+    <div class="badge">Sürüm 1.0 “Meridian” · AGPL-3.0</div>
+    <h1>Tarayıcıda çalışan<br><span class="grad">bir işletim sistemi.</span></h1>
+    <p class="lede">
+      Pencere yöneticisi, sanal dosya sistemi, kendi tarayıcısı, kendi bulutu ve
+      uygulama yazmak için kendi programlama dili. Kurulum yok, sunucu yok,
+      bağımlılık yok — sekmeyi açın, çalışsın.
+    </p>
+    <div class="cta">
+      <a class="btn primary big" href="os/">OpenOS’u başlat</a>
+      <a class="btn big" href="https://github.com/m3sto/openos" rel="noopener">Kaynak kodu</a>
+    </div>
+    <div class="trust">
+      <span>⌘/Ctrl + Boşluk — Spotlight</span><i>·</i>
+      <span>F4 Launchpad</span><i>·</i>
+      <span>F3 Mission Control</span>
+    </div>
+
+    <!-- canlı önizleme: gerçek OpenOS, bir çerçevenin içinde -->
+    <figure class="shot" id="shot">
+      <div class="shot-frame">
+        <div class="shot-bar"><i></i><i></i><i></i><span>OpenOS — canlı önizleme</span></div>
+        <div class="shot-stage" id="stage">
+          <div class="mock" aria-hidden="true">
+            <div class="mock-menubar"><span class="m-logo"></span><b>Finder</b><span>Dosya</span><span>Görünüm</span><span>Pencere</span><span class="m-right">14:25</span></div>
+            <div class="mock-win">
+              <div class="mock-winbar"><i class="r"></i><i class="y"></i><i class="g"></i><span>OpenSharp Studio</span></div>
+              <div class="mock-body">
+                <pre class="mock-code"><span class="c-cm"># Sayaç</span>
+<span class="c-k">app</span> { <span class="c-pr">name</span>: <span class="c-s">"Sayaç"</span> <span class="c-pr">icon</span>: <span class="c-s">"plus"</span> }
+
+<span class="c-k">state</span> count = <span class="c-n">0</span>
+
+<span class="c-k">view</span> {
+  <span class="c-t">VStack</span>(<span class="c-pr">spacing</span>: <span class="c-n">16</span>) {
+    <span class="c-t">Label</span>(<span class="c-s">"${count}"</span>, <span class="c-pr">style</span>: <span class="c-s">"display"</span>)
+    <span class="c-t">Button</span>(<span class="c-s">"+"</span>, <span class="c-pr">onClick</span>: <span class="c-k">fn</span>() {
+      count = count + <span class="c-n">1</span>
+    })
+  }
+}</pre>
+                <div class="mock-preview">
+                  <div class="mp-title">Sayaç</div>
+                  <div class="mp-num">3</div>
+                  <div class="mp-row"><span class="mp-btn">−</span><span class="mp-btn on">+</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="mock-dock">
+              <i style="--a:#4aa8ff;--b:#0a6ede"></i><i style="--a:#4c4c52;--b:#1c1c1e"></i>
+              <i style="--a:#7b5cff;--b:#4a2fd0"></i><i style="--a:#ffd60a;--b:#e0a000"></i>
+              <i style="--a:#4aa8ff;--b:#1b56d6"></i><i style="--a:#9aa0aa;--b:#5b6069"></i>
+              <i style="--a:#64d2ff;--b:#0a84ff"></i>
+            </div>
+          </div>
+          <button class="play" id="playBtn" type="button">
+            <span class="play-dot">▶</span>
+            <span>Canlı önizlemeyi başlat</span>
+            <small>gerçek OpenOS bu sayfada çalışır</small>
+          </button>
+        </div>
+      </div>
+      <figcaption>Yukarıdaki çerçeve gerçek OpenOS’u çalıştırır — ekran görüntüsü değil.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================ stats ============================ -->
+  <section class="strip">
+    <div><b>17</b><span>yerleşik uygulama</span></div>
+    <div><b>12</b><span>yordamsal duvar kâğıdı</span></div>
+    <div><b>~30</b><span>OpenSharp bileşeni</span></div>
+    <div><b>0</b><span>bağımlılık</span></div>
+  </section>
+
+  <!-- ========================== features ========================== -->
+  <section id="ozellikler" class="section">
+    <h2>Bir masaüstünden beklediğiniz her şey</h2>
+    <p class="sub">Ve hiçbiri taklit değil — hepsi çalışıyor.</p>
+    <div class="grid">
+      <article class="card"><div class="ic" style="--a:#4aa8ff;--b:#0a6ede">🪟</div>
+        <h3>Pencere yöneticisi</h3>
+        <p>Sürükle, sekiz yönden boyutlandır, kenara yapıştır, tam ekran yap.
+           Dock’a küçülme animasyonu, z-sıralaması, Mission Control ve
+           istersen <b>jöle modu</b>: pencereler yumuşak bir gövde gibi esner.</p></article>
+
+      <article class="card"><div class="ic" style="--a:#9aa0aa;--b:#5b6069">⚙️</div>
+        <h3>Gerçek bir kabuk</h3>
+        <p>Dock, menü çubuğu, Launchpad, Spotlight, Kontrol Merkezi, bildirimler,
+           widget’lar, kilit ekranı. Linux tarzı çekirdek günlüğüyle açılır,
+           iOS tarzı sihirbazla kurulur.</p></article>
+
+      <article class="card"><div class="ic" style="--a:#ff7ab6;--b:#c4408a">🖼️</div>
+        <h3>Kod ile çizilen duvar kâğıtları</h3>
+        <p>On iki duvar kâğıdının tamamı canvas üzerinde yordamsal üretilir.
+           Görsel dosyası yok, her çözünürlükte keskin, dördü canlı akar.</p></article>
+
+      <article class="card"><div class="ic" style="--a:#30d158;--b:#0c7a34">🗂️</div>
+        <h3>Sanal dosya sistemi</h3>
+        <p>Taşı, kopyala, ara, yürü. Finder, Terminal ve tüm uygulamalar aynı
+           dosya sistemini paylaşır; veriler tarayıcınızda kalır, JSON olarak
+           dışa aktarılabilir.</p></article>
+
+      <article class="card"><div class="ic" style="--a:#ff9f0a;--b:#c96f00">⌨️</div>
+        <h3>32 komutlu terminal</h3>
+        <p><code>ls</code>, <code>tree</code>, <code>grep</code>, <code>ps</code>,
+           <code>install</code>, <code>theme</code>, <code>neofetch</code>…
+           Sekme tamamlama ve komut geçmişiyle.</p></article>
+
+      <article class="card"><div class="ic" style="--a:#bf5af2;--b:#6b2494">🎛️</div>
+        <h3>Baştan aşağı ayarlanabilir</h3>
+        <p>Tema, vurgu rengi, duvar kâğıdı, Dock konumu ve büyütme, widget’lar,
+           jöle şiddeti, ajan izinleri — hepsi Sistem Ayarları’nda.</p></article>
+    </div>
+  </section>
+
+  <!-- ========================= opensharp ========================= -->
+  <section id="opensharp" class="section alt">
+    <div class="split">
+      <div>
+        <div class="kicker">Kendi dili</div>
+        <h2>OpenSharp</h2>
+        <p class="sub left">Uygulama yazmak için tasarlanmış küçük bir dil.
+          Sözcüksel çözümleyici, ayrıştırıcı ve ağaç yürüyen yorumlayıcı — hepsi
+          depoda, 2.000 satırın altında.</p>
+        <ul class="ticks">
+          <li><b>state</b> ile tanımlanan değişken değişince arayüz kendiliğinden yenilenir</li>
+          <li>Büyük harfle başlayan çağrılar birer arayüz bileşenidir</li>
+          <li>Kapanışlar, listeler, sözlükler, metin araya yerleştirme</li>
+          <li>Dosya sistemi, kalıcı depo ve sistem çağrıları</li>
+          <li>Studio’da <b>Kur</b> deyince gerçek bir uygulamaya dönüşür</li>
+        </ul>
+        <a class="btn" href="os/">Studio’yu aç</a>
+      </div>
+      <pre class="code"><span class="c-k">app</span> {
+  <span class="c-pr">name</span>: <span class="c-s">"Yapılacaklar"</span>
+  <span class="c-pr">icon</span>: <span class="c-s">"check"</span>
+  <span class="c-pr">tint</span>: [<span class="c-s">"#30d158"</span>, <span class="c-s">"#1a9e45"</span>]
+}
+
+<span class="c-k">state</span> items = <span class="c-f">store_get</span>(<span class="c-s">"items"</span>, [])
+<span class="c-k">state</span> draft = <span class="c-s">""</span>
+
+<span class="c-k">fn</span> <span class="c-fn">addItem</span>() {
+  <span class="c-k">if</span> <span class="c-f">len</span>(<span class="c-f">trim</span>(draft)) == <span class="c-n">0</span> { <span class="c-k">return</span> }
+  <span class="c-f">push</span>(items, { <span class="c-pr">text</span>: draft, <span class="c-pr">done</span>: <span class="c-k">false</span> })
+  <span class="c-f">store_set</span>(<span class="c-s">"items"</span>, items)
+  draft = <span class="c-s">""</span>
+}
+
+<span class="c-k">view</span> {
+  <span class="c-t">VStack</span>(<span class="c-pr">spacing</span>: <span class="c-n">12</span>, <span class="c-pr">padding</span>: <span class="c-n">16</span>) {
+    <span class="c-t">HStack</span>(<span class="c-pr">spacing</span>: <span class="c-n">8</span>) {
+      <span class="c-t">TextField</span>(draft, <span class="c-pr">bind</span>: <span class="c-s">"draft"</span>, <span class="c-pr">grow</span>: <span class="c-k">true</span>)
+      <span class="c-t">Button</span>(<span class="c-s">"Ekle"</span>, <span class="c-pr">variant</span>: <span class="c-s">"primary"</span>, <span class="c-pr">onClick</span>: addItem)
+    }
+    <span class="c-k">for</span> i, it <span class="c-k">in</span> items {
+      <span class="c-t">Checkbox</span>(it.text, <span class="c-pr">value</span>: it.done)
+    }
+  }
+}</pre>
+    </div>
+  </section>
+
+  <!-- ========================== openbrow ========================== -->
+  <section id="openbrow" class="section">
+    <div class="split rev">
+      <div>
+        <div class="kicker">Kendi tarayıcısı</div>
+        <h2>OpenBrow</h2>
+        <p class="sub left">Sekmeler, akıllı adres çubuğu, yer imleri, geçmiş,
+          indirilenler, gizli gezinti, sayfada arama, yakınlaştırma — ve kendi
+          sayfa motoru.</p>
+        <p class="sub left">Dahili <code>openos://</code> sayfaları iframe olmadan
+          doğrudan OpenOS bileşenleriyle çizilir. Web sayfaları OpenBrow Proxy
+          üzerinden alınır: çerçeveleme engelleri kalkar ve sayfaya OpenOS kimliği
+          enjekte edilir. Sayfa kendisini <b>tarayıcı içinde tarayıcıda değil,
+          OpenOS üzerinde çalışan OpenBrow’da</b> sanır.</p>
+        <pre class="code small">navigator.userAgent → Mozilla/5.0 (OpenOS 1.0; Meridian)
+                      … OpenBrow/1.0 Safari/605.1.15
+navigator.platform  → OpenOS
+navigator.appName   → OpenBrow
+window.OpenBrow     → { version, os, proxied, page }</pre>
+      </div>
+      <div class="browser-mock">
+        <div class="bm-tabs"><span class="on">Başlangıç</span><span>Wikipedia</span><span>+</span></div>
+        <div class="bm-bar"><i>🔒</i><span>openos://start</span></div>
+        <div class="bm-body">
+          <div class="bm-hero"><div class="bm-mark">🧭</div><b>OpenBrow</b><small>OpenOS’un kendi tarayıcısı</small></div>
+          <div class="bm-tiles"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================== cloud =========================== -->
+  <section id="cloud" class="section alt">
+    <div class="cloudcard">
+      <div class="kicker">Hesabınız</div>
+      <h2>OpenOS Cloud</h2>
+      <p class="sub">Uygulamalarınızı yayınlayın, indirdiklerinizi her cihazda bulun,
+        OpenOS çalıştırdığınız tüm kurulumları tek yerden görün. <b>Hesap isteğe
+        bağlıdır</b> — App Store hesapsız da çalışır.</p>
+      <div class="grid three">
+        <article class="mini"><b>Uygulama yayınla</b><span>Studio’dan tek tıkla mağazaya gönderin; sürüm, kategori ve simge sizden.</span></article>
+        <article class="mini"><b>Cihazlarınız</b><span>Hangi OpenOS kurulumu ne zaman giriş yaptı, hangisi şu an etkin — ve tek tıkla oturumu kapatın.</span></article>
+        <article class="mini"><b>Kütüphane</b><span>İndirdiğiniz her uygulama hesabınıza bağlıdır; yeni cihazda aynı liste sizi bekler.</span></article>
+      </div>
+      <div class="cta">
+        <a class="btn primary" href="https://m3sto.github.io/openos-cloud/" rel="noopener">Cloud panosunu aç</a>
+        <a class="btn" href="https://github.com/m3sto/openos-cloud" rel="noopener">Cloud kaynağı</a>
+        <a class="btn ghostline" href="https://github.com/m3sto/openos-cloud/blob/main/SECURITY.md" rel="noopener">Güvenlik belgesi</a>
+      </div>
+      <p class="fine">Şifreler PBKDF2-SHA256 · 310.000 tur · oturum belirteçleri veritabanında yalnızca özet olarak · ham IP saklanmaz · oran sınırlı uçlar</p>
+    </div>
+  </section>
+
+  <!-- ========================== agents ========================== -->
+  <section id="ajanlar" class="section">
+    <div class="split">
+      <div>
+        <div class="kicker">Makine dostu</div>
+        <h2>Yapay zekâ ajanları için tasarlandı</h2>
+        <p class="sub left">OpenOS yalnızca insanlar için değil. <code>window.OpenOS</code>
+          altındaki API belgelenmiştir, izinlerle korunur ve her çağrı Ajan
+          Merkezi’nde canlı olarak günlüklenir.</p>
+        <ul class="ticks">
+          <li>Kendini anlatan yetenek bildirimi: <code>await OpenOS.describe()</code></li>
+          <li>Uygulama açma/kapatma, pencere düzeni, dosya işlemleri</li>
+          <li>Kabuk komutu ve OpenSharp betiği çalıştırma</li>
+          <li>Sistemin o anki tam durumu: <code>OpenOS.snapshot()</code></li>
+        </ul>
+      </div>
+      <pre class="code"><span class="c-cm">// ajan konsolundan</span>
+<span class="c-k">await</span> OpenOS.<span class="c-fn">describe</span>()
+OpenOS.<span class="c-fn">openApp</span>(<span class="c-s">"terminal"</span>)
+<span class="c-k">await</span> OpenOS.<span class="c-fn">exec</span>(<span class="c-s">"ls ~/Projeler"</span>)
+OpenOS.fs.<span class="c-fn">write</span>(<span class="c-s">"~/Masaüstü/a.txt"</span>, <span class="c-s">"selam"</span>)
+
+<span class="c-cm">// kendi uygulamasını yazıp kurar</span>
+<span class="c-k">await</span> OpenOS.<span class="c-fn">runScript</span>(<span class="c-s">`
+app { name: "Ajan Paneli" icon: "robot" }
+state n = 0
+view {
+  VStack(spacing: 12, padding: 20) {
+    Label("Sayaç: " + n, style: "title")
+    Button("Artır", onClick: fn() { n = n + 1 })
+  }
+}`</span>)
+
+OpenOS.<span class="c-fn">arrangeWindows</span>(<span class="c-s">"tile"</span>)</pre>
+    </div>
+  </section>
+
+  <!-- =========================== close =========================== -->
+  <section class="final">
+    <h2>Sekmeyi açın, işletim sistemi orada.</h2>
+    <p class="sub">Kurulum yok. Hesap yok. İndirme yok.</p>
+    <div class="cta">
+      <a class="btn primary big" href="os/">OpenOS’u başlat</a>
+      <a class="btn big" href="https://github.com/m3sto/openos" rel="noopener">⭐ GitHub’da yıldızla</a>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div>
+    <a class="brand small" href="./">
+      <svg viewBox="0 0 100 100" width="20" height="20" aria-hidden="true">
+        <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="9"/>
+        <path d="M36 62L64 38" stroke="var(--accent)" stroke-width="9" stroke-linecap="round"/>
+      </svg><span>OpenOS</span></a>
+    <p>Tarayıcıda çalışan sanal işletim sistemi.</p>
+  </div>
+  <div class="cols">
+    <div><b>Proje</b>
+      <a href="os/">OpenOS’u başlat</a>
+      <a href="https://github.com/m3sto/openos" rel="noopener">Kaynak kodu</a>
+      <a href="https://github.com/m3sto/openos/blob/main/README.md" rel="noopener">Belgeler</a>
+    </div>
+    <div><b>Cloud</b>
+      <a href="https://m3sto.github.io/openos-cloud/" rel="noopener">Pano</a>
+      <a href="https://github.com/m3sto/openos-cloud" rel="noopener">Cloud kaynağı</a>
+      <a href="https://github.com/m3sto/openos-cloud/blob/main/SECURITY.md" rel="noopener">Güvenlik</a>
+    </div>
+    <div><b>Lisans</b>
+      <a href="https://github.com/m3sto/openos/blob/main/LICENSE" rel="noopener">AGPL-3.0</a>
+      <a href="https://github.com/m3sto/openos/blob/main/NOTICE" rel="noopener">Marka bildirimi</a>
+    </div>
+  </div>
+  <small>© 2026 Mesto · AGPL-3.0-or-later · “OpenOS”, “OpenSharp”, “OpenBrow” adları lisans kapsamı dışındadır.</small>
+</footer>
+
+<script src="site/site.js" defer></script>
+</body>
+</html>

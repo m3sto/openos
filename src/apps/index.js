@@ -1,0 +1,32 @@
+/* ==========================================================================
+   OpenOS · apps/index.js — register every built-in application
+   ========================================================================== */
+
+import registry from '../core/registry.js';
+
+import finder from './finder.js';
+import terminal from './terminal.js';
+import studio from './studio.js';
+import settingsApp from './settings-app.js';
+import texteditor from './texteditor.js';
+import notes from './notes.js';
+import calculator from './calculator.js';
+import browser from './openbrow.js';
+import photos from './photos.js';
+import calendar from './calendar.js';
+import appstore from './appstore.js';
+import agenthub from './agenthub.js';
+import cloudapp from './cloudapp.js';
+import misc from './misc.js';
+
+export const BUILTIN = [
+  finder, terminal, studio, settingsApp, texteditor, notes, calculator,
+  browser, photos, calendar, appstore, cloudapp, agenthub, ...misc,
+];
+
+export function registerBuiltins() {
+  BUILTIN.forEach(app => registry.register(app));
+  return registry;
+}
+
+export default registerBuiltins;

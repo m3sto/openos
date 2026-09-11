@@ -1,0 +1,36 @@
+OpenOS — tarayıcıda çalışan sanal masaüstü işletim sistemi
+Copyright (C) 2026  Mesto
+
+Bu program özgür yazılımdır: GNU Affero General Public License'ın 3. sürümü
+ya da (tercihinize bağlı olarak) daha sonraki bir sürümü koşulları altında
+yeniden dağıtabilir ve/veya değiştirebilirsiniz.
+
+Bu program faydalı olacağı umuduyla dağıtılmaktadır, ancak HİÇBİR GARANTİ
+VERİLMEZ; SATILABİLİRLİK veya BELİRLİ BİR AMACA UYGUNLUK zımni garantisi
+dahi verilmez. Ayrıntılar için GNU Affero General Public License'a bakın.
+
+Bu programın bir kopyasıyla birlikte GNU Affero General Public License'ın
+bir kopyasını almış olmalısınız. Almadıysanız <https://www.gnu.org/licenses/>
+adresine bakın.
+
+---------------------------------------------------------------------------
+MARKA / İSİM HAKLARI  (AGPL kapsamı DIŞINDADIR)
+---------------------------------------------------------------------------
+
+AGPL-3.0 yalnızca KAYNAK KODU kapsar. Aşağıdaki isimler, logolar ve görsel
+kimlik lisans kapsamında DEĞİLDİR ve tüm hakları saklıdır:
+
+  · "OpenOS"        — işletim sistemi adı
+  · "OpenSharp"     — programlama dili adı
+  · "OpenBrow"      — tarayıcı adı
+  · "OpenOS Cloud"  — bulut hizmeti adı
+  · OpenOS halka/eğik çizgi logosu ve simge seti
+
+Kodu çatallayabilir (fork) ve değiştirebilirsiniz; ancak çatalınızı bu
+isimlerle veya bu isimlerle karıştırılabilecek isimlerle dağıtamaz, bu
+isimler altında hizmet sunamazsınız. Çatalınıza kendi adınızı verin.
+
+AGPL §13 gereği: OpenOS'u veya değiştirilmiş bir sürümünü bir ağ üzerinden
+kullanıcılara sunuyorsanız (örn. bir web sitesinde barındırıyorsanız),
+çalıştırdığınız sürümün TAM KAYNAK KODUNU o kullanıcılara sunmakla
+yükümlüsünüz. Bu, projenin kapalı bir ürüne dönüştürülmesini engeller.

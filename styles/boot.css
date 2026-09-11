@@ -1,0 +1,105 @@
+/* ==========================================================================
+   OpenOS · boot.css — POST splash, kernel log, login
+   ========================================================================== */
+
+.boot {
+  position: absolute; inset: 0; background: #000; color: #e8e8e8;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+  overflow: hidden; z-index: 500;
+}
+.boot.fading { animation: os-fade-out .55s var(--ease) forwards; }
+
+/* --- the logo stage --- */
+.boot-logo {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 26px;
+}
+.boot-mark {
+  width: 92px; height: 92px; position: relative;
+  animation: boot-mark-in 1.1s var(--ease-out) both;
+}
+@keyframes boot-mark-in {
+  from { opacity: 0; transform: scale(.82); filter: blur(6px); }
+  to   { opacity: 1; transform: scale(1); filter: none; }
+}
+.boot-mark svg { width: 100%; height: 100%; overflow: visible; }
+.boot-mark .ring {
+  fill: none; stroke: #fff; stroke-width: 6; stroke-linecap: round;
+  stroke-dasharray: 251; stroke-dashoffset: 251;
+  animation: boot-ring 1.6s var(--ease-out) .25s forwards;
+}
+@keyframes boot-ring { to { stroke-dashoffset: 0 } }
+.boot-mark .slash {
+  stroke: var(--accent); stroke-width: 6; stroke-linecap: round;
+  opacity: 0; animation: boot-slash .5s var(--spring) 1.35s forwards;
+}
+@keyframes boot-slash { from { opacity:0; transform: translateY(6px) } to { opacity:1; transform:none } }
+.boot-word {
+  font-family: var(--font); font-size: 15px; letter-spacing: .42em;
+  text-indent: .42em; color: #bdbdbd; font-weight: 300;
+  opacity: 0; animation: os-fade-in .8s var(--ease) 1.1s forwards;
+}
+.boot-bar {
+  width: 190px; height: 4px; border-radius: 99px; background: rgba(255,255,255,.15);
+  overflow: hidden; opacity: 0; animation: os-fade-in .5s var(--ease) 1.4s forwards;
+}
+.boot-bar > i {
+  display: block; height: 100%; width: 0; border-radius: 99px;
+  background: linear-gradient(90deg, #fff, var(--accent-hi));
+  transition: width .35s var(--ease);
+}
+
+/* --- the kernel log --- */
+.boot-log {
+  position: absolute; inset: 0; padding: 26px 30px; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  text-shadow: 0 0 14px rgba(180,220,255,.14);
+}
+.boot-log .ln { white-space: pre-wrap; word-break: break-word; animation: os-fade-in .09s linear; }
+.boot-log .ts  { color: #7d8590; }
+.boot-log .ok  { color: #3fd07a; }
+.boot-log .warn{ color: #f0c04a; }
+.boot-log .err { color: #ff6a5e; }
+.boot-log .hi  { color: #7cc4ff; }
+.boot-log .dim { color: #6c737d; }
+.boot-cursor { display: inline-block; width: 8px; height: 14px; background: #e8e8e8;
+  vertical-align: -2px; animation: boot-blink 1s steps(2) infinite; }
+@keyframes boot-blink { 50% { opacity: 0 } }
+
+/* CRT-ish scanline veil, very subtle */
+.boot-log::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(180deg, rgba(255,255,255,.018) 0 1px, transparent 1px 3px);
+}
+
+/* --- shutdown / restart veil --- */
+.power-veil {
+  position: absolute; inset: 0; z-index: 9800; background: #000;
+  display: grid; place-items: center; gap: 20px; color: #fff;
+  animation: os-fade-in .35s var(--ease);
+}
+
+/* --- lock screen --- */
+.lock {
+  position: absolute; inset: 0; z-index: 400; display: grid; place-items: center;
+  background-size: cover; background-position: center;
+}
+.lock::before { content:""; position: absolute; inset: 0; backdrop-filter: blur(46px) saturate(150%);
+  -webkit-backdrop-filter: blur(46px) saturate(150%); background: rgba(0,0,0,.24); }
+.lock-card { position: relative; display: grid; justify-items: center; gap: 14px; color: #fff;
+  animation: os-pop-in .4s var(--spring-soft); }
+.lock-card .k-avatar { width: 84px; height: 84px; font-size: 36px; }
+.lock-name { font-size: 17px; font-weight: 560; text-shadow: 0 1px 8px rgba(0,0,0,.4); }
+.lock-field {
+  display: flex; align-items: center; width: 210px; height: 30px; padding: 0 10px;
+  border-radius: 99px; background: rgba(255,255,255,.22); backdrop-filter: blur(12px);
+  border: .5px solid rgba(255,255,255,.3);
+}
+.lock-field input { flex: 1; background: none; border: 0; outline: none; color: #fff; font-size: 13px; }
+.lock-field input::placeholder { color: rgba(255,255,255,.65); }
+.lock-hint { font-size: 11.5px; color: rgba(255,255,255,.7); }
+.lock-clock { position: absolute; top: 12vh; left: 0; right: 0; text-align: center; color: #fff;
+  text-shadow: 0 2px 18px rgba(0,0,0,.45); }
+.lock-clock .t { font-size: 76px; font-weight: 250; letter-spacing: -.02em; line-height: 1; }
+.lock-clock .d { font-size: 17px; font-weight: 500; opacity: .92; margin-top: 4px; }
+.shake { animation: os-shake .5s var(--ease); }
