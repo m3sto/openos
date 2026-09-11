@@ -18,11 +18,17 @@ import appstore from './appstore.js';
 import agenthub from './agenthub.js';
 import cloudapp from './cloudapp.js';
 import graphics from './graphics.js';
+import clock from './clock.js';
+import storage from './storage.js';
+import paint from './paint.js';
+import weather from './weather.js';
+import capture from './capture.js';
 import misc from './misc.js';
 
 export const BUILTIN = [
   finder, terminal, studio, settingsApp, texteditor, notes, calculator,
-  browser, photos, calendar, appstore, cloudapp, agenthub, graphics, ...misc,
+  browser, photos, calendar, appstore, cloudapp, agenthub, graphics,
+  clock, weather, storage, paint, ...capture, ...misc,
 ];
 
 export function registerBuiltins() {

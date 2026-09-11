@@ -730,3 +730,145 @@ mark.ob-hit { background: var(--yellow); color: #000; border-radius: 2px; }
 .gfx-chip.good { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
 .gfx-chip.warn { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
 .gfx-chip.bad  { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
+
+/* ==========================================================================
+   Saat
+   ========================================================================== */
+.clk-stage { display: grid; justify-items: center; gap: 16px; padding: 26px 0 18px; position: relative; }
+.clk-big {
+  font-size: 54px; font-weight: 250; letter-spacing: -.02em; line-height: 1;
+  font-variant-numeric: tabular-nums; z-index: 1;
+}
+.clk-ring {
+  position: absolute; top: 8px; width: 190px; height: 190px; border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 84px, #000 85px);
+  mask: radial-gradient(circle, transparent 84px, #000 85px);
+  transition: background .3s linear;
+}
+
+/* ==========================================================================
+   Depolama Analizi
+   ========================================================================== */
+.stg-map {
+  display: flex; gap: 3px; height: 74px; border-radius: var(--r-md); overflow: hidden;
+  box-shadow: 0 0 0 .5px var(--hairline-soft);
+}
+.stg-tile {
+  flex: 1 1 auto; min-width: 8px; display: grid; place-items: center; cursor: default;
+  color: #fff; font-size: 11px; font-weight: 600; overflow: hidden; white-space: nowrap;
+  transition: filter var(--t-fast), transform var(--t-fast);
+}
+.stg-tile:hover { filter: brightness(1.12); }
+
+/* ==========================================================================
+   Kamera · Ses Kaydedici
+   ========================================================================== */
+.cap-stage { flex: 1; min-height: 0; background: #0a0b0e; position: relative; overflow: hidden; }
+.cap-stage.flash::after {
+  content: ''; position: absolute; inset: 0; background: #fff;
+  animation: cap-flash .18s var(--ease);
+}
+@keyframes cap-flash { from { opacity: .9 } to { opacity: 0 } }
+.cap-denied { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center;
+  gap: 8px; text-align: center; color: var(--text); background: var(--surface); padding: 20px; }
+.cap-denied .g { color: var(--text-3); margin-bottom: 6px; }
+.cap-bar {
+  display: flex; align-items: center; justify-content: center; gap: 14px; padding: 12px;
+  flex: 0 0 auto; box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+}
+.cap-shutter {
+  width: 58px; height: 58px; border-radius: 50%; background: var(--surface);
+  box-shadow: 0 0 0 3px var(--text), inset 0 0 0 2px var(--surface);
+  transition: transform .12s var(--spring), background .12s;
+}
+.cap-shutter:hover { background: var(--surface-2); }
+.cap-shutter:active { transform: scale(.9); }
+.cap-shutter[disabled] { opacity: .35; pointer-events: none; }
+.cap-strip { display: flex; gap: 7px; padding: 10px 12px; overflow-x: auto; flex: 0 0 auto;
+  box-shadow: inset 0 .5px 0 var(--hairline-soft); min-height: 62px; }
+.cap-thumb {
+  width: 62px; height: 44px; flex: 0 0 auto; border-radius: 7px; background-size: cover;
+  background-position: center; cursor: default; box-shadow: var(--sh-1);
+  transition: transform var(--t-fast) var(--spring);
+}
+.cap-thumb:hover { transform: translateY(-2px) scale(1.04); }
+
+.rec-stage { display: grid; justify-items: center; gap: 14px; padding: 22px 16px 18px;
+  box-shadow: inset 0 -.5px 0 var(--hairline-soft); }
+.rec-wave { width: 100%; max-width: 520px; height: 90px; display: block; }
+.rec-btn {
+  width: 64px; height: 64px; border-radius: 50%; background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 30%, transparent);
+  transition: all .18s var(--spring);
+}
+.rec-btn:hover { filter: brightness(1.1); }
+.rec-btn.on { border-radius: 16px; transform: scale(.82); }
+
+/* ==========================================================================
+   Çizim
+   ========================================================================== */
+.pnt-side { gap: 6px; }
+.pnt-tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 0 8px; }
+.pnt-tool {
+  aspect-ratio: 1; border-radius: var(--r-sm); display: grid; place-items: center;
+  color: var(--text-2); background: var(--surface-2); transition: all var(--t-fast);
+}
+.pnt-tool:hover { background: var(--hairline); color: var(--text); }
+.pnt-tool[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.pnt-swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; padding: 0 8px; }
+.pnt-swatch {
+  aspect-ratio: 1; border-radius: 50%; box-shadow: inset 0 0 0 .5px var(--hairline);
+  transition: transform var(--t-fast) var(--spring);
+}
+.pnt-swatch:hover { transform: scale(1.15); }
+.pnt-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent), inset 0 0 0 .5px var(--hairline); }
+.pnt-custom { width: calc(100% - 16px); margin: 0 8px; height: 26px; border: 0; background: none; }
+.pnt-size { width: calc(100% - 16px); margin: 0 8px; accent-color: var(--accent); }
+.pnt-stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px;
+  background: var(--surface-2); }
+.pnt-canvas {
+  max-width: 100%; max-height: 100%; border-radius: var(--r-sm);
+  box-shadow: var(--sh-2), 0 0 0 .5px var(--hairline); background: #fff; touch-action: none;
+}
+
+/* ==========================================================================
+   Hava Durumu
+   ========================================================================== */
+.wx-results {
+  position: absolute; top: 36px; left: 11px; width: 280px; z-index: 30;
+  border-radius: var(--r-md); overflow: hidden; background: var(--glass-strong);
+  backdrop-filter: blur(30px) saturate(180%); box-shadow: var(--sh-pop);
+}
+.wx-results:empty { display: none; }
+.wx-result { padding: 8px 12px; cursor: default; }
+.wx-result:hover { background: var(--accent); color: var(--accent-fg); }
+.wx-result:hover .k-text { color: inherit; }
+.wx-hero {
+  display: grid; justify-items: center; gap: 2px; padding: 26px 16px 22px; color: #fff;
+  background: linear-gradient(165deg, #4aa8ff, #0a6ede 60%, #1b3fa0);
+}
+.wx-hero.night { background: linear-gradient(165deg, #2b2f55, #16182c 60%, #0a0b14); }
+.wx-place { font-size: 22px; font-weight: 650; letter-spacing: -.015em; }
+.wx-country { font-size: 12px; opacity: .75; }
+.wx-emoji { font-size: 52px; line-height: 1.2; margin: 4px 0; }
+.wx-temp { font-size: 58px; font-weight: 250; line-height: 1; letter-spacing: -.03em; }
+.wx-label { font-size: 15px; font-weight: 520; margin-top: 2px; }
+.wx-sub { font-size: 12px; opacity: .82; margin-top: 4px; text-align: center; }
+.wx-hours { display: flex; gap: 6px; overflow-x: auto; padding: 4px 16px 8px; }
+.wx-hour {
+  flex: 0 0 auto; width: 56px; padding: 10px 4px; border-radius: var(--r-md);
+  background: var(--surface); box-shadow: 0 0 0 .5px var(--hairline-soft);
+  display: grid; justify-items: center; gap: 3px; text-align: center;
+}
+.wx-hour .h { font-size: 11px; color: var(--text-3); }
+.wx-hour .e { font-size: 18px; }
+.wx-hour .t { font-size: 13px; font-weight: 600; }
+.wx-hour .p { font-size: 10px; color: var(--blue); min-height: 12px; }
+.wx-range {
+  flex: 1; height: 5px; border-radius: 99px; position: relative; margin: 0 8px;
+  background: color-mix(in srgb, var(--text-3) 22%, transparent);
+}
+.wx-range i {
+  position: absolute; top: 0; height: 5px; border-radius: 99px;
+  background: linear-gradient(90deg, var(--cyan, #64d2ff), var(--orange));
+}

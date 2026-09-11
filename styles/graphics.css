@@ -93,3 +93,29 @@ html.gfx-anim-off *::after {
 
 /* ---------- yalın mod: katman sayısını düşürür ---------- */
 html.gfx-shadow-off .wallpaper.tinted::after { display: none; }
+
+/* --------------------------------------------------------------------------
+   Gölgeyi yalnızca token üzerinden kısmak yetmiyor: box-shadow'u var() ile
+   kuran kurallar (özellikle .win.jelly.focused gibi çok katmanlı olanlar)
+   eski değeri vermeye devam edebiliyor. Bu yüzden tüketici kurallar burada
+   doğrudan eziliyor — sonuç tarayıcıdan bağımsız olarak kesin.
+   -------------------------------------------------------------------------- */
+html.gfx-shadow-flat .win,
+html.gfx-shadow-flat .win.focused,
+html.gfx-shadow-flat .win.jelly.focused {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .28), 0 0 0 .5px var(--hairline) !important;
+}
+html.gfx-shadow-off .win,
+html.gfx-shadow-off .win.focused,
+html.gfx-shadow-off .win.jelly.focused {
+  box-shadow: 0 0 0 .5px var(--hairline) !important;
+}
+html.gfx-shadow-off .k-card,
+html.gfx-shadow-off .k-group,
+html.gfx-shadow-off .widget,
+html.gfx-shadow-off .dock,
+html.gfx-shadow-off .k-menu,
+html.gfx-shadow-off .notif,
+html.gfx-shadow-off .notif-center,
+html.gfx-shadow-off .control-center,
+html.gfx-shadow-off .spotlight { box-shadow: 0 0 0 .5px var(--hairline) !important; }
