@@ -13,6 +13,16 @@ const BASE = 'assets/icons/apps/';
 /** id → çözülmüş url | 'glyph'  (oturum başına bir kez yoklanır) */
 const known = new Map();
 
+/* Klasörün içeriği tek bir dizin dosyasından okunur. Yoklamayı kör yapmak
+   simgesi olmayan her uygulama için dört başarısız istek üretiyordu; konsol
+   404'lerle doluyor ve ağ boşuna meşgul ediliyordu. Dizin gelmezse eski
+   davranışa (kör yoklama) dönülür — çevrimdışı bir kopya da çalışsın. */
+let dizin = null;
+const dizinHazir = fetch(BASE + 'index.json')
+  .then(r => (r.ok ? r.json() : null))
+  .then(l => { dizin = Array.isArray(l) ? new Set(l) : null; })
+  .catch(() => { dizin = null; });
+
 /* WebP önce denenir: aynı görselin PNG'sinden ~7 kat küçük ve bu sistemi
    çalıştırabilen her tarayıcı destekler. PNG ikinci sırada kalır, böylece
    klasöre elle bırakılan PNG'ler de çalışır. */
@@ -59,6 +69,7 @@ export function appIcon(app, size = 52, opts = {}) {
   /* Henüz bilinmiyor: önce glif çizilir, adaylar sırayla yoklanır ve ilk
      yüklenen görsel glifin yerini alır — böylece hiç boş kare görünmez. */
   drawGlyph();
+
   const candidates = [];
   if (settings.isDark) EXTS.forEach(e => candidates.push(iconUrl(app.id, e, true)));
   EXTS.forEach(e => candidates.push(iconUrl(app.id, e, false)));
@@ -70,7 +81,14 @@ export function appIcon(app, size = 52, opts = {}) {
     probe.onerror = () => tryNext(i + 1);
     probe.src = candidates[i];
   };
-  tryNext(0);
+
+  /* Dizin varsa ve id listede değilse tek bir istek bile atılmaz; dizin
+     alınamadıysa eski kör yoklamaya dönülür. */
+  const coz = () => {
+    if (dizin && !dizin.has(app.id)) { known.set(app.id, 'glyph'); return; }
+    tryNext(0);
+  };
+  if (dizin === null) dizinHazir.then(coz); else coz();
   return box;
 }
 

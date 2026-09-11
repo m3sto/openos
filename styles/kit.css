@@ -28,7 +28,18 @@
 .k-zstack > * { grid-area: 1 / 1; }
 .k-spacer { flex: 1 1 auto; }
 .k-grid   { display: grid; gap: 12px; }
-.k-scroll { overflow: auto; -webkit-overflow-scrolling: touch; }
+/* Sınıf bilerek iki kez yazılır. `.k-scroll` bir *niyet* beyanıdır: bu alan
+   kaydırılsın. Tek sınıfla yazıldığında, sonradan yüklenen bir sayfadaki eşit
+   ağırlıklı `.content { overflow: hidden }` gibi bir kural onu kaynak sırasıyla
+   eziyor ve taşan içerik sessizce kırpılıyordu. */
+.k-scroll.k-scroll  { overflow: auto; -webkit-overflow-scrolling: touch; }
+/* Kaydırılan bir sütunda çocuklar asla ezilmemeli. Esnek yerleşimin
+   varsayılanı `flex-shrink: 1`: yer daralınca kartlar kaydırmayı tetiklemek
+   yerine sessizce küçülür ve `overflow: hidden` taşan kısmı yutar — içerik
+   hiçbir uyarı vermeden kaybolur. Taşmak burada doğru davranış. */
+.k-scroll.k-scroll > * { flex-shrink: 0; }
+.k-scroll.k-scroll.y { overflow-x: hidden; overflow-y: auto; }
+.k-scroll.k-scroll.x { overflow-x: auto; overflow-y: hidden; }
 .k-wrap   { flex-wrap: wrap; }
 
 /* ---------- button ---------- */
@@ -153,6 +164,7 @@
 }
 .k-group {
   background: var(--surface); border-radius: var(--r-md); overflow: hidden;
+  flex-shrink: 0;
   box-shadow: var(--sh-1), 0 0 0 .5px var(--hairline-soft);
 }
 .k-group > .k-row + .k-row { border-top: .5px solid var(--hairline-soft); }
@@ -263,3 +275,84 @@
 .app-icon.png { background: none !important; box-shadow: none !important; }
 .app-icon.png::after { display: none !important; }
 .app-icon.png img { filter: drop-shadow(0 3px 6px rgba(0,0,0,.22)); }
+
+/* ---------- sistem kaydırıcısı ----------
+   Yerleşik kaydırma çubuğu her platformda başka görünür ve içerikten yer
+   çalar. Buradaki çubuk içeriğin üstünde durur, boştayken söner, imleç
+   yaklaşınca kalınlaşır. Çizimi tek bir `transform` ile yapılır. */
+.os-scroll-host {
+  position: relative;
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+}
+.os-scroll-host > .os-scroll-body {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  margin: 0; max-height: none;
+}
+/* Yerleşik çubuk tamamen susturulur — yerini sistemin çubuğu alır. */
+.os-scroll-body { scrollbar-width: none; }
+.os-scroll-body::-webkit-scrollbar { width: 0; height: 0; }
+
+.os-sb {
+  position: absolute; z-index: 5;
+  opacity: 0; pointer-events: none;
+  transition: opacity .28s var(--ease), width .14s var(--ease), height .14s var(--ease);
+}
+.os-sb.y { top: 2px; bottom: 2px; right: 2px; width: 7px; }
+.os-sb.x { left: 2px; right: 2px; bottom: 2px; height: 7px; }
+.os-scroll-host.iki-eksen > .os-sb.y { bottom: 13px; }
+.os-scroll-host.iki-eksen > .os-sb.x { right: 13px; }
+
+.os-scroll-host.gorunur > .os-sb { opacity: 1; pointer-events: auto; }
+.os-scroll-host.gorunur > .os-sb:hover,
+.os-sb.tutuluyor { width: 11px; }
+.os-sb.x.tutuluyor, .os-scroll-host.gorunur > .os-sb.x:hover { width: auto; height: 11px; }
+
+.os-sb-thumb {
+  position: absolute; top: 0; left: 0;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--text-2) 42%, transparent);
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.22);
+  transition: background var(--t-fast) var(--ease);
+}
+.os-sb.y .os-sb-thumb { width: 100%; }
+.os-sb.x .os-sb-thumb { height: 100%; }
+.os-sb:hover .os-sb-thumb { background: color-mix(in srgb, var(--text-2) 62%, transparent); }
+.os-sb.tutuluyor .os-sb-thumb { background: color-mix(in srgb, var(--text) 72%, transparent); }
+
+/* ---------- sistem metin kutusu ---------- */
+.k-textfield { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.k-field-label {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
+  color: var(--text-2); padding-left: 2px;
+}
+.k-field-ic { flex: 0 0 auto; display: flex; color: var(--text-3); }
+.k-field:focus-within .k-field-ic { color: var(--accent); }
+.k-field-suffix { flex: 0 0 auto; font-size: 12px; color: var(--text-3); }
+.k-field-clear {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: color-mix(in srgb, var(--text-3) 32%, transparent);
+  color: var(--surface); opacity: .85;
+  transition: opacity var(--t-fast), background var(--t-fast);
+}
+.k-field-clear:hover { opacity: 1; background: var(--text-3); }
+.k-field-help { font-size: 11.5px; color: var(--text-3); padding-left: 2px; line-height: 1.35; }
+.k-field-help.hata { color: var(--red); }
+.k-field-count {
+  align-self: flex-end; font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.k-field-count.dolu { color: var(--red); font-weight: 600; }
+
+/* Geçersiz durum: kenarlık ve halka kırmızıya döner, alan bir kez titrer. */
+.k-textfield.gecersiz .k-field { border-color: var(--red); }
+.k-textfield.gecersiz .k-field:focus-within {
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--red) 22%, transparent);
+}
+.k-textfield.gecersiz .k-field { animation: k-field-shake .32s var(--ease); }
+@keyframes k-field-shake {
+  10%, 90% { transform: translateX(-1.5px); }
+  30%, 70% { transform: translateX(2.5px); }
+  50%      { transform: translateX(-2.5px); }
+}

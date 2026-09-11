@@ -11,6 +11,8 @@ import notify from './notify.js';
 import wm from '../ui/window.js';
 import { Desktop } from '../ui/desktop.js';
 import { menu } from '../ui/menu.js';
+import { upgradeScrollers } from '../ui/scroller.js';
+import { installTextControls } from '../ui/textfield.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
 import { seedFilesystem, ensureTree } from './seed.js';
@@ -102,6 +104,12 @@ export class Kernel {
     this.desktop?.destroy();
     this.desktop = new Desktop(this);
     this.desktop.mount(this.stage);
+    /* Sistemin kendi kaydırma çubukları: sahnedeki her kaydırılabilir alan
+       yükseltilir, sonradan açılan pencereler de izlenerek yakalanır. */
+    upgradeScrollers(this.stage);
+    /* Sistemdeki her metin alanı — uygulamaların kendi yazdıkları dahil —
+       düzenleme bağlam menüsünü kazanır. */
+    installTextControls(document);
     this.playHomeEntrance();
   }
 
