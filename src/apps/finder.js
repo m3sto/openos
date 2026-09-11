@@ -8,6 +8,7 @@ import { menu, contextMenu } from '../ui/menu.js';
 import vfs, { VFS } from '../core/vfs.js';
 import notify from '../core/notify.js';
 import { glyphFor } from '../ui/desktop.js';
+import { quickLook, closeQuickLook, quickLookOpen } from '../ui/quicklook.js';
 
 export default {
   id: 'finder', name: 'Finder', glyph: 'folder', tint: ['#4aa8ff', '#0a6ede'],
@@ -32,7 +33,8 @@ class Finder {
     this.build();
     this.goto(ctx.args?.path || vfs.home);
     this.off = vfs.bus.on('change', debounce(() => this.refresh(), 90));
-    ctx.win.onClosed = () => this.off?.();
+    this.kurHizliBakis();
+    ctx.win.onClosed = () => { this.off?.(); closeQuickLook(); };
   }
 
   build() {
@@ -255,11 +257,60 @@ class Finder {
     return el;
   }
 
+  /**
+   * Boşluk tuşu seçili dosyayı önizler — macOS'taki Hızlı Bakış. Ok
+   * tuşlarıyla klasördeki diğer dosyalara geçilir, boşluk ya da Esc kapatır.
+   */
+  kurHizliBakis() {
+    on(this.el, 'keydown', e => {
+      /* Metin yazılan bir alandayken boşluk boşluktur. */
+      const hedef = e.target;
+      if (hedef.matches?.('input, textarea, [contenteditable]')) return;
+
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (quickLookOpen()) { closeQuickLook(); return; }
+        this.hizliBakis();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        for (const p of [...this.sel]) this.ctx.os.trash(p);
+        this.clearSel();
+      } else if (e.key === 'Enter' && this.sel.size === 1) {
+        e.preventDefault();
+        const p = [...this.sel][0];
+        if (vfs.isDir(p)) this.goto(p); else this.ctx.openPath(p);
+      }
+    });
+    this.el.tabIndex = 0;
+  }
+
+  hizliBakis() {
+    const secili = [...this.sel];
+    let hedef = secili[0];
+    if (!hedef) {
+      /* Seçim yoksa klasörün ilk öğesi gösterilir — boşluğa basmak hiçbir
+         şey yapmamaktansa bir şey göstersin. */
+      try { hedef = vfs.list(this.path)[0]?.path; } catch {}
+    }
+    if (!hedef) return;
+    let komsular = [];
+    try { komsular = vfs.list(this.path).map(s => s.path); } catch {}
+    quickLook(hedef, {
+      komsular,
+      acilis: p => (vfs.isDir(p) ? this.goto(p) : this.ctx.openPath(p)),
+    });
+  }
+
   clearSel() { this.sel.clear(); this.grid.querySelectorAll('.sel').forEach(e => e.classList.remove('sel')); }
 
   itemMenu(s) {
     return [
       { label: 'Aç', glyph: 'folderOpen', run: () => s.type === 'dir' ? this.goto(s.path) : this.ctx.openPath(s.path) },
+      { label: 'Hızlı Bakış', glyph: 'eye', key: 'Boşluk', run: () => {
+        let komsular = [];
+        try { komsular = vfs.list(this.path).map(x => x.path); } catch {}
+        quickLook(s.path, { komsular, acilis: p => (vfs.isDir(p) ? this.goto(p) : this.ctx.openPath(p)) });
+      } },
       ...(s.ext === 'osh' ? [
         { label: 'Studio’da Aç', glyph: 'code', run: () => this.ctx.openApp('studio', { path: s.path }) },
         { label: 'Uygulama Olarak Kur', glyph: 'package', run: () => this.ctx.os.installApp(s.path) },

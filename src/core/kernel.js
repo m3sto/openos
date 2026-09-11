@@ -18,6 +18,7 @@ import { paketOku, paketMi } from '../lang/package.js';
 import clipboard from './clipboard.js';
 import pkg from './pkgmanager.js';
 import permissions from './permissions.js';
+import { toggleShortcuts, closeShortcuts } from '../ui/shortcuts.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
 import { seedFilesystem, ensureTree, seedGuide, KILAVUZ_YOLU } from './seed.js';
@@ -542,9 +543,12 @@ export class Kernel {
 
       if (e.key === 'F4') { e.preventDefault(); return this.toggleLaunchpad(); }
       if (e.key === 'F3') { e.preventDefault(); return this.toggleMission(); }
-      if (e.key === 'Escape') { this.desktop?.closeAllOverlays(); return; }
+      if (e.key === 'Escape') { if (closeShortcuts()) return; this.desktop?.closeAllOverlays(); return; }
 
       if (mod && e.code === 'Space') { e.preventDefault(); return this.toggleSpotlight(); }
+      /* ⌘/ — kısayol paneli. Sistemde onlarca kısayol vardı ve hiçbiri
+         görünmüyordu; bilmeyen hiç kullanmıyordu. */
+      if (mod && (e.key === '/' || e.key === '?')) { e.preventDefault(); return toggleShortcuts(); }
       if (!mod) return;
 
       const win = wm.focused;
