@@ -62,6 +62,10 @@ export function appIcon(app, size = 52, opts = {}) {
       style: { width: '100%', height: '100%', objectFit: 'contain', display: 'block' } }));
   };
 
+  /* Paketlenmiş uygulamalar simgelerini kendi içlerinde taşır; dosya
+     sisteminde aramaya gerek yok. */
+  if (app.iconUrl) { drawPng(app.iconUrl); return box; }
+
   const state = known.get(app.id);
   if (state === 'glyph' || !app.id) { drawGlyph(); return box; }
   if (state) { drawPng(state); return box; }

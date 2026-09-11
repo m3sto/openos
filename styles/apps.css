@@ -908,3 +908,188 @@ mark.ob-hit { background: var(--yellow); color: #000; border-radius: 2px; }
   position: absolute; top: 0; height: 5px; border-radius: 99px;
   background: linear-gradient(90deg, var(--cyan, #64d2ff), var(--orange));
 }
+
+/* ==========================================================================
+   OpenSharp Studio — IDE kabuğu
+   ========================================================================== */
+.app-shell.ide { --ide-rail: 46px; }
+
+/* ---- etkinlik çubuğu: sol kenardaki simge rayı ---- */
+.ide-activity {
+  width: var(--ide-rail); flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 6px 0 8px; gap: 2px;
+  background: var(--surface-2);
+  box-shadow: inset -.5px 0 0 var(--hairline);
+}
+.ide-act {
+  position: relative; width: 34px; height: 34px; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-3); cursor: inherit;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.ide-act:hover { color: var(--text); background: var(--hairline-soft); }
+.ide-act.on { color: var(--accent); }
+/* Etkin panel, macOS'taki gibi soldaki ince bir kirişle işaretlenir. */
+.ide-act.on::before {
+  content: ""; position: absolute; left: -6px; top: 7px; bottom: 7px;
+  width: 2px; border-radius: 0 2px 2px 0; background: var(--accent);
+}
+.ide-act[data-rozet]:not([data-rozet=""])::after {
+  content: attr(data-rozet);
+  position: absolute; right: 1px; top: 1px;
+  min-width: 14px; height: 14px; padding: 0 3px;
+  border-radius: 99px; background: var(--red); color: #fff;
+  font-size: 9.5px; font-weight: 700; line-height: 14px; text-align: center;
+}
+
+/* ---- panel ---- */
+.ide-side-head.ana {
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 8px 7px 12px;
+}
+.ide-panel-title { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; color: var(--text-3); }
+.ide-panel-acts { display: flex; gap: 2px; }
+.ide-side-btn {
+  width: 22px; height: 22px; border-radius: var(--r-xs);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-3); cursor: inherit;
+}
+.ide-side-btn:hover { background: var(--hairline-soft); color: var(--text); }
+.ide-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ide-panel[hidden] { display: none; }
+
+/* ---- projede arama ---- */
+.ide-search-box { padding: 6px 10px 8px; flex: 0 0 auto; }
+.ide-search-results { flex: 1; min-height: 0; overflow: auto; padding: 0 4px 10px; }
+.ide-search-summary {
+  padding: 4px 10px 8px; font-size: 11px; color: var(--text-3);
+}
+.ide-search-file { margin-bottom: 3px; }
+.ide-search-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-radius: var(--r-xs);
+  font-size: 12px; font-weight: 560; cursor: inherit;
+}
+.ide-search-head:hover { background: var(--hairline-soft); }
+.ide-search-head .g { color: var(--accent); display: flex; }
+.ide-search-head .sayi {
+  margin-left: auto; font-size: 10.5px; color: var(--text-3);
+  background: var(--hairline-soft); border-radius: 99px; padding: 0 6px;
+}
+.ide-search-file.kapali .ide-search-hit { display: none; }
+.ide-search-hit {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 2px 8px 2px 22px; border-radius: var(--r-xs);
+  font-family: var(--mono); font-size: 11px; color: var(--text-2); cursor: inherit;
+}
+.ide-search-hit:hover { background: var(--hairline-soft); }
+.ide-search-hit .ln { color: var(--text-3); min-width: 22px; text-align: right; }
+.ide-search-hit mark { background: color-mix(in srgb, var(--yellow, #ffd60a) 55%, transparent); color: inherit; border-radius: 2px; }
+
+/* ---- düzenleyici ---- */
+/* `min-height: 0` olmadan ızgara hücresi içeriğine göre büyür ve alt panel
+   ile durum çubuğunu pencerenin dışına iter. */
+.ide-center { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* Düzenleyici boşluğun tamamını alır; alt panel kendi yüksekliğinde kalır.
+   `.ed` tek başına ızgara hücresiyken esnemeye gerek duymuyordu. */
+.ide-center > .ed { flex: 1 1 auto; min-height: 0; }
+.ide-breadcrumb {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 3px;
+  padding: 4px 12px; font-size: 11px; color: var(--text-3);
+  box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+  overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+}
+.ide-breadcrumb::-webkit-scrollbar { display: none; }
+.ide-breadcrumb .sep { opacity: .45; display: flex; }
+.ide-breadcrumb .son { color: var(--text); }
+.ide-breadcrumb .simge { color: var(--accent); display: flex; }
+
+/* İmlecin durduğu satır. Konumu transform ile taşınır — yerleşim hesabı yok. */
+.ed-activeline {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 0;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  transition: opacity .12s var(--ease);
+}
+
+/* ---- minimap ---- */
+.ed-minimap-wrap {
+  position: relative; flex: 0 0 auto; width: 82px;
+  background: var(--ed-bg, #14151a);
+  box-shadow: inset .5px 0 0 var(--hairline-soft);
+  overflow: hidden; cursor: inherit;
+}
+.ed-minimap { display: block; width: 78px; margin: 6px 2px; opacity: .85; }
+.ed-minimap-view {
+  position: absolute; left: 0; right: 0;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-top: .5px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-bottom: .5px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  pointer-events: none;
+}
+
+/* ---- alt panel: konsol ve sorunlar ---- */
+.ide-bottom {
+  flex: 0 0 auto; height: 176px; min-height: 34px;
+  display: flex; flex-direction: column;
+  box-shadow: inset 0 .5px 0 var(--hairline);
+  background: var(--surface);
+}
+.ide-bottom.kapali { height: 34px; }
+.ide-bottom.kapali > :not(.ide-bottom-bar) { display: none; }
+.ide-bottom-bar {
+  flex: 0 0 auto; height: 33px; display: flex; align-items: center; gap: 2px;
+  padding: 0 8px; box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+}
+.ide-bottom-bar button[data-alt] {
+  padding: 4px 10px; border-radius: var(--r-xs);
+  font-size: 11.5px; font-weight: 560; color: var(--text-3); cursor: inherit;
+}
+.ide-bottom-bar button[data-alt]:hover { color: var(--text); }
+.ide-bottom-bar button[data-alt][aria-selected="true"] {
+  color: var(--text); background: var(--hairline-soft);
+}
+.ide-bottom > .st-console, .ide-bottom > .ide-problems { flex: 1; min-height: 0; overflow: auto; }
+.ide-bottom > [hidden] { display: none; }
+/* Panelin yüksekliğini ayarlayan tutamak. */
+.ide-hdrag { height: 5px; flex: 0 0 auto; cursor: ns-resize; }
+.ide-hdrag:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* ---- durum çubuğu ---- */
+.ide-status {
+  height: 25px; flex: 0 0 auto; display: flex; align-items: center; gap: 0;
+  padding: 0 6px; font-size: 11px; color: var(--text-3);
+  box-shadow: inset 0 .5px 0 var(--hairline);
+  background: var(--surface-2);
+}
+.ide-st {
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 7px; border-radius: var(--r-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ide-st .g { display: flex; opacity: .8; }
+.ide-st.tiklanir:hover { background: var(--hairline-soft); color: var(--text); }
+.ide-st.err { color: var(--red); font-weight: 600; }
+.ide-st.warn { color: var(--orange, #ff9f0a); font-weight: 600; }
+.ide-st.ok { color: var(--green, #30d158); }
+.ide-st.dirty { color: var(--accent); }
+
+/* ---- paket paneli ---- */
+.ide-pkg { overflow: auto; padding: 10px 12px 16px; gap: 10px; }
+.ide-pkg-sec {
+  font-size: 10px; font-weight: 700; letter-spacing: .07em; color: var(--text-3);
+  margin: 8px 0 -2px;
+}
+.ide-pkg-iconrow { display: flex; gap: 10px; align-items: center; }
+.ide-pkg-icon {
+  width: 58px; height: 58px; flex: 0 0 auto; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; box-shadow: var(--sh-1), inset 0 .5px 0 rgba(255,255,255,.3);
+  overflow: hidden;
+}
+.ide-pkg-issues { display: flex; flex-direction: column; gap: 4px; }
+.ide-pkg-issue { font-size: 11.5px; color: var(--red); }
+.ide-pkg-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.ide-side.gizli { display: none; }
+.ide-search-head .yer { font-size: 10px; color: var(--text-3); font-weight: 400; flex: 0 0 auto; }

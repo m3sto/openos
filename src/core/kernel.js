@@ -14,6 +14,7 @@ import { menu } from '../ui/menu.js';
 import { upgradeScrollers } from '../ui/scroller.js';
 import { installTextControls } from '../ui/textfield.js';
 import { openFile, saveFile } from '../ui/filedialog.js';
+import { paketOku, paketMi } from '../lang/package.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
 import { seedFilesystem, ensureTree } from './seed.js';
@@ -229,23 +230,33 @@ export class Kernel {
     let list = [];
     try { list = vfs.list(dir); } catch { return; }
     for (const f of list) {
-      if (f.ext !== 'osh') continue;
+      /* Tek dosyalık .osh de, simgesi ve manifesti olan .osapp paketi de
+         kurulabilir; ikisi de burada aynı kapıdan geçer. */
+      const paket = f.type === 'dir' && paketMi(f.path);
+      if (!paket && f.ext !== 'osh') continue;
       try { this.installApp(f.path, { silent: true }); } catch (e) { console.warn('[apps]', e); }
     }
   }
 
   /** Register a .osh file in the VFS as a launchable application. */
   installApp(path, { silent = false } = {}) {
-    const src = vfs.read(path);
-    const meta = parseAppHeader(src);
+    /* Paket ise kimlik manifestten gelir — kaynağın başlığından tahmin
+       etmekten çok daha güvenilir; simge de paketin içinden çıkar. */
+    const paket = paketOku(path);
+    const kaynakYolu = paket ? paket.girisYolu : path;
+    const src = paket ? paket.kaynak : vfs.read(path);
+    const meta = paket ? paket.manifest : parseAppHeader(src);
     const id = meta.id || 'osh_' + slug(meta.name || VFS.basename(path).replace(/\.osh$/, ''));
     const app = registry.register({
       id, name: meta.name || VFS.basename(path), glyph: meta.icon || 'sparkles',
       tint: meta.tint || ['#5e5ce6', '#bf5af2'],
-      category: 'user', kind: 'opensharp', source: path,
+      category: 'user', kind: 'opensharp', source: kaynakYolu,
+      packagePath: paket ? path : null,
+      iconUrl: paket?.simge || null,
+      version: meta.version || null,
       width: meta.width || 480, height: meta.height || 420,
-      about: `OpenSharp uygulaması · ${path}`,
-      mount: (ctx) => this.mountOshApp(ctx, path),
+      about: meta.about || `OpenSharp uygulaması · ${path}`,
+      mount: (ctx) => this.mountOshApp(ctx, kaynakYolu),
     });
     if (!silent) notify.post({ title: 'Uygulama kuruldu', body: app.name, glyph: 'package', tint: app.tint });
     this.bus.emit('app:install', app);
