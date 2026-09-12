@@ -348,6 +348,9 @@ export class Kernel {
         openApp: (id, a) => this.openApp(id, a),
         onPrint: s => console.log(`[${ctx.app.id}]`, s),
       });
+      /* Çalışan yorumlayıcıya pencereden ulaşılabilsin: ajan arayüzü ve
+         tanılama bunu kullanıyor. */
+      ctx.win.oshRunner = runner;
       runner.start(vfs.read(path));
       ctx.win.onClosed = () => runner.destroy();
       ctx.win.onArgs = () => runner.start(vfs.read(path));

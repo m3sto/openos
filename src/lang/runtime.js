@@ -367,13 +367,35 @@ export const COMPONENTS = {
   Canvas: (el, api) => {
     const p = el.props;
     const c = h('canvas', { style: { width: '100%', height: px(p.height || 200), borderRadius: px(p.radius ?? 10) } });
-    requestAnimationFrame(() => {
+
+    /* Çizim bir sonraki karede yapılır; o zamana dek tuval yerleşmiş ve
+       gerçek genişliğini bilir. `requestAnimationFrame` arka plandaki
+       sekmede durduğu için orada tuval hiç çizilmiyordu — gizliyken
+       zamanlayıcıya düşülür. Genişlik ölçülemiyorsa çizim yapılmaz ve
+       ölçüm mümkün olunca yeniden denenir. */
+    let sonGen = 0, sonYuk = 0;
+    const ciz = () => {
+      const gen = c.clientWidth, yuk = c.clientHeight;
+      if (!gen || !yuk) return;                 /* henüz yerleşmedi */
       const dpr = Math.min(devicePixelRatio || 1, 2);
-      c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
+      c.width = gen * dpr; c.height = yuk * dpr;
       const ctx = c.getContext('2d');
       ctx.scale(dpr, dpr);
-      if (p.draw) api.invoke(p.draw, [makePainter(ctx, c.clientWidth, c.clientHeight)]);
+      if (p.draw) api.invoke(p.draw, [makePainter(ctx, gen, yuk)]);
+      sonGen = gen; sonYuk = yuk;
+    };
+
+    /* Sınırlı sayıda yeniden deneme kırılgan: tuval o pencerede yerleşmezse
+       bir daha hiç çizilmiyor. Boyut gözlemcisi ölçü ne zaman gelirse o
+       zaman çizer ve pencere yeniden boyutlandırıldığında da tazeler. */
+    const go = new ResizeObserver(() => {
+      const gen = c.clientWidth, yuk = c.clientHeight;
+      if (!gen || !yuk) return;
+      if (gen === sonGen && yuk === sonYuk) return;
+      ciz();
     });
+    go.observe(c);
+    if (document.hidden) setTimeout(ciz, 32); else requestAnimationFrame(ciz);
     return applyCommon(c, p);
   },
 

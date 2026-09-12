@@ -81,10 +81,19 @@ export class OshApp {
     return this.meta;
   }
 
+  /**
+   * Yeniden çizimi bir sonraki kareye erteler. `requestAnimationFrame`
+   * arka plandaki sekmede durur; orada durum değişse bile görünüm
+   * güncellenmiyor ve uygulama donmuş görünüyordu. Sekme gizliyken
+   * zamanlayıcıya düşülür — kare hızında olması gerekmiyor, olması
+   * gerekiyor.
+   */
   schedule(force) {
     if (this.dirty && !force) return;
     this.dirty = true;
-    requestAnimationFrame(() => { this.dirty = false; this.render(); });
+    const ciz = () => { this.dirty = false; this.render(); };
+    if (document.hidden) setTimeout(ciz, 32);
+    else requestAnimationFrame(ciz);
   }
 
   captureFocus() {
