@@ -60,11 +60,26 @@ class Scroller {
         const üst = el.parentElement && getComputedStyle(el.parentElement).display;
         if (üst && !/flex|grid/.test(üst) && cs.height !== 'auto') host.style.height = cs.height;
       }
-      /* Kabuk öğenin *bildirilen* yerleşim özelliklerini devralıyor ama
-         ölçülen kutusunu devralmıyor: `width: 100%` yazan bir öğe,
-         `align-items: center` olan esnek bir kapta kabuğun içerik
-         genişliğine düşüyor — Launchpad ızgarası böyle tek sütuna indi.
-         Sarmalamadan önceki kutu ölçülür ve sonrasıyla karşılaştırılır. */
+      /* Sütun akışlı bir kapta kaydırılabilir alan hemen her zaman tam
+         genişlik ister; kabuk genişlik bildirmediğinde içerik genişliğine
+         düşüyor ve `width: 100%` yazan çocuk onunla birlikte daralıyordu —
+         Launchpad ızgarası böyle tek sütuna indi. Bu kural ölçüme
+         dayanmadığı için gizli sekmede de, ilk karede de geçerli.
+         Çocuğun kendi hizalaması kabuğa taşınır ki ortalanmış dar bir
+         öğe ortalanmış kalsın. */
+      const ustCs = el.parentElement ? getComputedStyle(el.parentElement) : null;
+      const sutunAkis = ustCs && /flex|grid/.test(ustCs.display) &&
+                        (ustCs.display.includes('grid') || (ustCs.flexDirection || 'row').startsWith('column'));
+      if (sutunAkis) {
+        host.style.width = '100%';
+        host.style.alignSelf = 'stretch';
+        if (cs.alignSelf && cs.alignSelf !== 'auto' && cs.alignSelf !== 'stretch') {
+          host.style.alignItems = cs.alignSelf;
+        }
+      }
+
+      /* Ölçüme dayalı yedek: yukarıdaki kuralın kapsamadığı durumlarda
+         sarmalamadan önceki kutu sonrasıyla karşılaştırılır. */
       this._oncekiKutu = el.getBoundingClientRect();
       el.parentNode.insertBefore(host, el);
       host.appendChild(el);
