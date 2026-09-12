@@ -60,10 +60,17 @@ class Scroller {
         const üst = el.parentElement && getComputedStyle(el.parentElement).display;
         if (üst && !/flex|grid/.test(üst) && cs.height !== 'auto') host.style.height = cs.height;
       }
+      /* Kabuk öğenin *bildirilen* yerleşim özelliklerini devralıyor ama
+         ölçülen kutusunu devralmıyor: `width: 100%` yazan bir öğe,
+         `align-items: center` olan esnek bir kapta kabuğun içerik
+         genişliğine düşüyor — Launchpad ızgarası böyle tek sütuna indi.
+         Sarmalamadan önceki kutu ölçülür ve sonrasıyla karşılaştırılır. */
+      this._oncekiKutu = el.getBoundingClientRect();
       el.parentNode.insertBefore(host, el);
       host.appendChild(el);
     }
     this.host = host;
+    this._kutuyuKoru();
     el.classList.add('os-scroll-body');
 
     this.bars = {};
@@ -79,7 +86,7 @@ class Scroller {
     on(host, 'pointerenter', () => { this.sync(); this.flash(true); });
     on(host, 'pointerleave', () => this.flash());
 
-    this.ro = new ResizeObserver(() => this.sync());
+    this.ro = new ResizeObserver(() => { this._kutuyuKoru(); this.sync(); });
     this.ro.observe(el);
     if (el.firstElementChild) this.ro.observe(el.firstElementChild);
     this.mo = new MutationObserver(() => this.sync());
@@ -87,6 +94,30 @@ class Scroller {
 
     this.sync();
     el.__osScroller = this;
+  }
+
+  /**
+   * Sarmalama sonrası öğenin daraldığını ölçer ve kabuğa genişliği geri
+   * verir. Ölçüm gizli sekmede ya da daha yerleşim yapılmamışken sıfır
+   * döner; o durumda karar verilmez ve ölçüm mümkün olunca (ResizeObserver)
+   * yeniden denenir — sıfır bir ölçü değil, ölçememenin işaretidir.
+   */
+  _kutuyuKoru() {
+    if (this._kutuKorundu || !this._oncekiKutu) return;
+    const once = this._oncekiKutu;
+    const simdi = this.el.getBoundingClientRect();
+    /* Hiçbir şey ölçülemiyorsa karar verme; bir dahaki sefere. */
+    if (!once.width && !once.height) { this._oncekiKutu = simdi.width || simdi.height ? simdi : once; return; }
+    if (!simdi.width && !simdi.height) return;
+
+    if (once.width - simdi.width > 1) {
+      this.host.style.alignSelf = 'stretch';
+      this.host.style.width = '100%';
+    }
+    if (once.height - simdi.height > 1 && getComputedStyle(this.host).position !== 'absolute') {
+      this.host.style.height = '100%';
+    }
+    this._kutuKorundu = true;
   }
 
   /** Tutamağı sürüklemek ve yolağa tıklamak. */
