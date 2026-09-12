@@ -856,7 +856,8 @@ view {
   `fileText` `fileCode` `code` `package` `bolt` `clock` `calendar` `music`
   `image` `globe` `terminal` `settings` `trash` `heart` `star` `grid` `list`
   `info` `alert` `play` `save` `upload` `download` `refresh` `home` `user`
-  `sparkles` `calc` `chart` `lock` `wifi` `window` `copy` `clipboard`.
+  `sparkles` `calc` `chart` `lock` `wifi` `window` `copy` `clipboard`
+  `circle` `minus` `eye` `undo` `redo` `scissors` `selectAll` `files` `alert`.
 
   Adı doğrulamak için terminalde `oshc check` yetmez — bilinmeyen simge
   sessizce boş çizilir. Emin değilseniz `sparkles` kullanın.

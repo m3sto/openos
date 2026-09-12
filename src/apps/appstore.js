@@ -17,6 +17,7 @@ import cloud from '../core/cloud.js';
 import { GitHub } from '../core/github.js';
 import { parseAppHeader, slug } from '../core/kernel.js';
 import { BUILTIN_CATALOG } from './store-catalog.js';
+import { paketOku, paketMi } from '../lang/package.js';
 
 export default {
   id: 'appstore', name: 'App Store', glyph: 'package', tint: ['#0a84ff', '#5e5ce6'],
@@ -300,6 +301,96 @@ class Store {
     box.appendChild(g);
   }
 
+  /**
+   * Kurulu bütün OpenSharp uygulamalarını tek işlemde yayınlar. Tek tek
+   * formu doldurmak, beş uygulaması olan biri için beş kez aynı işi yapmak
+   * demekti; manifest zaten her paketin içinde duruyor.
+   */
+  topluYayinlaBolumu() {
+    const st = cloud.status();
+    const kurulu = registry.all().filter(a => a.kind === 'opensharp' && a.packagePath);
+    if (!kurulu.length) return null;
+
+    const secim = new Set(kurulu.map(a => a.id));
+    const durum = h('div.k-text.t-caption');
+    const dugme = h('button.k-btn.v-primary.s-sm', {
+      html: icon('upload', 13), text: ` ${secim.size} uygulamayı yayınla` });
+
+    const satirlar = kurulu.map(a => {
+      const kutu = h('div.k-toggle', { dataset: { on: '1' } });
+      on(kutu, 'click', () => {
+        const acik = kutu.dataset.on !== '1';
+        kutu.dataset.on = acik ? '1' : '0';
+        if (acik) secim.add(a.id); else secim.delete(a.id);
+        dugme.textContent = ` ${secim.size} uygulamayı yayınla`;
+        dugme.prepend(h('span', { html: icon('upload', 13) }));
+        dugme.disabled = secim.size === 0;
+      });
+      return h('div.k-row',
+        h('span.ic', { style: { background: `linear-gradient(150deg, ${a.tint[0]}, ${a.tint[1]})`,
+                                color: '#fff' }, html: icon(a.glyph, 14) }),
+        h('div', { style: { flex: 1 } },
+          h('div.k-text', { text: a.name }),
+          h('div.k-text.t-caption', { text: `${a.id} · ${a.version || '1.0.0'}` })),
+        kutu);
+    });
+
+    on(dugme, 'click', async () => {
+      if (!st.signedIn && !st.github) {
+        notify.alert('Yayınlamak için önce OpenOS Cloud hesabınıza girin.',
+          { title: 'Oturum gerekli', glyph: '🔒' });
+        return;
+      }
+      dugme.disabled = true;
+      const hedefler = kurulu.filter(a => secim.has(a.id));
+      let basarili = 0;
+      const hatalar = [];
+
+      for (const a of hedefler) {
+        durum.textContent = `${a.name} yayınlanıyor… (${basarili + hatalar.length + 1}/${hedefler.length})`;
+        try {
+          const paket = paketOku(a.packagePath);
+          if (!paket) throw new Error('paket okunamadı');
+          await cloud.publish({
+            id: paket.manifest.id || a.id,
+            name: paket.manifest.name || a.name,
+            source: paket.kaynak,
+            manifest: {
+              summary: paket.manifest.about || '',
+              category: paket.manifest.category || 'Araç',
+              version: paket.manifest.version || '1.0.0',
+              icon: paket.manifest.icon || 'sparkles',
+              tint: paket.manifest.tint || a.tint,
+              author: st.signedIn ? st.user.handle : paket.manifest.author,
+              engine: 'opensharp-1', os: this.ctx.version,
+            },
+          });
+          basarili++;
+        } catch (e) {
+          hatalar.push(`${a.name}: ${e.message}`);
+        }
+      }
+
+      durum.textContent = hatalar.length
+        ? `${basarili} yayınlandı, ${hatalar.length} başarısız`
+        : `${basarili} uygulama yayınlandı`;
+      if (hatalar.length) {
+        notify.alert(hatalar.join('\n'), { title: 'Bazıları yayınlanamadı', glyph: '⚠️' });
+      } else {
+        notify.post({ title: 'Yayınlandı', body: `${basarili} uygulama mağazada`,
+                      glyph: 'package', tint: ['#0a84ff', '#5e5ce6'] });
+      }
+      await this.refreshCatalog();
+      dugme.disabled = false;
+    });
+
+    return h('div', { style: { marginTop: '8px' } },
+      h('div.k-sectitle', { text: 'Kurulu uygulamaları topluca yayınla' }),
+      h('div.k-group', ...satirlar),
+      h('div.k-hstack', { style: { gap: '10px', marginTop: '10px', alignItems: 'center' } },
+        dugme, durum));
+  }
+
   p_publish() {
     const st = cloud.status();
     this.body.append(
@@ -310,13 +401,33 @@ class Store {
 
     if (!st.signedIn && !st.github) {
       this.body.appendChild(this.signInPrompt('Yayınlamak için bir hedef bağlayın.'));
+      const onizleme = this.topluYayinlaBolumu();
+      if (onizleme) this.body.appendChild(onizleme);
       return;
     }
 
+    const toplu = this.topluYayinlaBolumu();
+    if (toplu) this.body.appendChild(toplu);
+
     /* --- source picker --- */
+    /* Kaynak yalnızca tek dosyalık `.osh` değil: paketlenmiş uygulamalar da
+       yayınlanabilmeli, yoksa Studio'da paketleyen kullanıcı mağazaya
+       gönderemiyor. Paketin giriş dosyası listeye girer. */
     let files = [];
-    try { files = vfs.list(VFS.join(vfs.home, 'Projeler')).filter(f => f.ext === 'osh'); } catch {}
-    try { files = files.concat(vfs.list('/Applications').filter(f => f.ext === 'osh')); } catch {}
+    const paketGirisleri = dizin => {
+      const cikti = [];
+      let ogeler = [];
+      try { ogeler = vfs.list(dizin); } catch { return cikti; }
+      for (const o of ogeler) {
+        if (o.type === 'file' && o.ext === 'osh') { cikti.push(o); continue; }
+        if (o.type === 'dir' && paketMi(o.path)) {
+          const p2 = paketOku(o.path);
+          if (p2) cikti.push({ ...vfs.stat(p2.girisYolu), paketYolu: o.path, manifest: p2.manifest });
+        }
+      }
+      return cikti;
+    };
+    files = [...paketGirisleri(VFS.join(vfs.home, 'Projeler')), ...paketGirisleri('/Applications')];
     if (!files.length) {
       this.body.appendChild(h('div.k-empty', h('div.glyph', { text: '📝' }),
         h('div.k-text.t-callout', { text: 'Projeler klasörünüzde .osh dosyası yok' }),
@@ -329,13 +440,20 @@ class Store {
       version: '1.0.0', icon: 'sparkles', tint: ['#5e5ce6', '#bf5af2'],
     };
     const applyHeader = () => {
+      const secilen = files.find(f => f.path === form.path);
       const src = vfs.read(form.path);
-      const meta = parseAppHeader(src);
+      /* Paketin manifesti kaynağın başlığından daha güvenilir: kullanıcı
+         Studio'da orada düzenlemiş oluyor. */
+      const meta = { ...parseAppHeader(src), ...(secilen?.manifest || {}) };
       form.name = meta.name || VFS.basename(form.path).replace(/\.osh$/, '');
-      form.id = slug(form.name);
+      form.id = meta.id || slug(form.name);
       form.icon = meta.icon || 'sparkles';
+      form.summary = meta.about || form.summary || '';
+      if (meta.version) form.version = meta.version;
       if (Array.isArray(meta.tint)) form.tint = meta.tint;
       nameF.value = form.name; idF.value = form.id;
+      sumF.value = form.summary;
+      verF.value = form.version || '1.0.0';
       preview.replaceChildren(previewCard(form));
     };
 
