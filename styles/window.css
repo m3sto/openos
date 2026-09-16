@@ -32,6 +32,9 @@
 @keyframes win-close { to { opacity: 0; } }
 .win.minimizing { transition: transform .35s var(--ease-in), opacity .35s var(--ease-in); opacity: 0; }
 .win.no-anim { animation: none; }
+/* Açılış bittiğinde (ya da hiç çalışmadıysa süresi dolduğunda) animasyon
+   sökülür — pencerenin görünürlüğü artık dolgu kipine bağlı değil. */
+.win.acildi { animation: none; opacity: 1; }
 .win.dragging, .win.resizing { transition: none; }
 
 /* Sürüklerken pahalı bileşikleme işleri askıya alınır. Hareket eden bir

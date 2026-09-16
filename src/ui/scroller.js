@@ -57,8 +57,24 @@ class Scroller {
         el.style.width = '100%';
         el.style.height = '100%';
       } else {
-        const üst = el.parentElement && getComputedStyle(el.parentElement).display;
-        if (üst && !/flex|grid/.test(üst) && cs.height !== 'auto') host.style.height = cs.height;
+        /* Blok akışta kabuk, çocuğunun boyunu kendiliğinden alır; buraya
+           `cs.height` yazmak tuzaktı: getComputedStyle boyu *kullanılan*
+           değer olarak, yani piksel olarak döndürür — `auto` hiç gelmez.
+           Sonuç, her kaydırma alanına sarmalandığı andaki boyun çakılması
+           oluyordu; pencere sonradan büyüdüğünde ya da sayfa tam ekrana
+           geçtiğinde içerik eski boyunda kalıyor, küçüldüğünde taşıyordu.
+           Tek gerçek tehlike çocuğun yüzdelik boyu: sarmalandıktan sonra
+           yüzde kabuğa göre çözülür, kabuk `auto` olduğu için sıfıra iner.
+           Bunu ölçerek anlarız — çocuk üstünü dolduruyorduysa doldurmaya
+           devam etsin; etmiyorduysa kabuk `auto` kalsın ve pencereyle
+           birlikte büyüsün. Hiçbir durumda piksel çakılmaz. */
+        const üstEl = el.parentElement;
+        const üst = üstEl && getComputedStyle(üstEl).display;
+        if (üstEl && üst && !/flex|grid/.test(üst)) {
+          const ub = üstEl.getBoundingClientRect();
+          const eb = el.getBoundingClientRect();
+          if (eb.height > 0 && Math.abs(eb.height - ub.height) <= 1) host.style.height = '100%';
+        }
       }
       /* Sütun akışlı bir kapta kaydırılabilir alan hemen her zaman tam
          genişlik ister; kabuk genişlik bildirmediğinde içerik genişliğine

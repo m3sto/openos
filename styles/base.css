@@ -154,6 +154,26 @@ a { color: var(--accent); text-decoration: none; }
 
 /* ==================== root stage ==================== */
 #os-root { position: fixed; inset: 0; overflow: hidden; background: #000; }
+
+/* Tam ekran. Sistemde bu kurallar hiç yoktu; tarayıcının UA stillerine
+   güveniyorduk ve onlar bizim varsaydığımız şeyi vaat etmiyor. Tam ekrana
+   geçen öğe *üst katmana* alınır: kendi yığma bağlamını kurar, `::backdrop`
+   arkasına siyah bir yüzey serer ve UA ona kendi `width/height` değerlerini
+   yazar. Hangi öğe tam ekrana geçerse geçsin — html, body ya da #os-root —
+   masaüstünün viewport'u eksiksiz doldurması ve ölçülerin `%` üzerinden
+   akması gerekiyor; aksi halde ata zincirinde bir yerde belirsiz bir boy
+   kalıyor ve altındaki yüzdelikler sıfıra çözülüyor. */
+html:fullscreen, body:fullscreen {
+  width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000;
+}
+#os-root:fullscreen { width: 100%; height: 100%; }
+:fullscreen::backdrop { background: #000; }
+
+/* Üst katmandaki öğe normal yığma sırasının dışında kalır: tam ekrandayken
+   menü çubuğu, Dock ve pencere katmanı da o öğenin *içinde* olmalı — zaten
+   öyleler, ama boyları viewport'a değil tam ekran kutusuna göre çözülsün
+   diye zinciri açıkça bağlıyoruz. */
+html:fullscreen > body, body:fullscreen > #os-root { height: 100%; }
 #stage  { position: absolute; inset: 0; }
 
 .layer { position: absolute; inset: 0; }

@@ -66,6 +66,26 @@ export class Win {
     this.body = h('div.win-body');
 
     this.el = h('div.win', { dataset: { app: a.id, id: this.id } }, this.bar, this.body);
+    /* Açılış animasyonu `both` dolgulu: başlamadan önce pencereyi
+       `opacity: 0`'da tutar. Bu, animasyon *gerçekten çalıştığı* sürece
+       doğru davranış — ama çalışmadığı durumlar var: arka plandaki sekmede
+       zamanlayıcılar kısılır, sayfa tam ekrana geçerken birleştirici
+       yüzeyleri yeniden kurulur, `prefers-reduced-motion` altında süre
+       sıfırlanır. Animasyon başlamazsa pencere görünmez bir kutu olarak
+       kalıyor ve hiçbir ölçüm bunu göstermiyor: kutu doğru boyda, içerik
+       yerinde, yalnızca boyanmıyor. Bittiği anda — ya da hiç bitmezse
+       süresi dolduğunda — animasyonu söküyoruz; görünürlük bir daha
+       animasyonun çalışmasına bağlı kalmıyor. */
+    const acilisiBitir = () => {
+      if (this._acilisBitti) return;
+      this._acilisBitti = true;
+      clearTimeout(this._acilisSaati);
+      this.el.classList.add('acildi');
+    };
+    this.el.addEventListener('animationend', e => {
+      if (e.target === this.el && e.animationName === 'win-open') acilisiBitir();
+    });
+    this._acilisSaati = setTimeout(acilisiBitir, 700);
     if (a.resizable !== false) {
       ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'].forEach(d =>
         this.el.appendChild(h('div.rz.' + d, { onpointerdown: e => this.startResize(e, d) })));
