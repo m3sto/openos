@@ -235,7 +235,16 @@ export class MenuBar {
     if (!this.clock) return;
     const d = new Date();
     const h12 = settings.get('h12');
-    this.clock.textContent = `${fmtDate(d, settings.get('locale'))} ${fmtTime(d, { h12, locale: settings.get('locale') })}`;
+    /* Tarih ve saat ayrı düğümler: dar ekranda tarih CSS ile düşürülüp
+       saat korunabilsin. Tek metin olduğunda ikisi birlikte kırpılıyordu. */
+    if (!this.clockDate) {
+      this.clock.textContent = '';
+      this.clockDate = h('span.mb-date');
+      this.clockTime = h('span.mb-time');
+      this.clock.append(this.clockDate, this.clockTime);
+    }
+    this.clockDate.textContent = fmtDate(d, settings.get('locale')) + ' ';
+    this.clockTime.textContent = fmtTime(d, { h12, locale: settings.get('locale') });
     if (this.battery && this.os.battery) {
       this.battery.innerHTML = this.batteryHtml();
       this.battery.title = this.batteryTitle();

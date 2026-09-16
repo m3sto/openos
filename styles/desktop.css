@@ -32,7 +32,23 @@
 .menubar .mb:hover, .menubar .mb.open { background: var(--accent); color: var(--accent-fg); }
 .menubar .mb.brand { font-size: 14px; padding: 0 8px; }
 .menubar .mb.appname { font-weight: 640; }
-.menubar .right { margin-left: auto; display: flex; align-items: center; gap: 1px; }
+/* Sağ bölüm asla ekran dışına taşmamalı. Uygulama menüleri esneyip
+   kırpılabilir, saat ve durum simgeleri kırpılamaz: dar ekranda menü
+   çubuğunun sağı görünümün dışına çıkıyor, saat kesiliyordu. */
+.menubar > .row { min-width: 0; overflow: hidden; flex: 0 1 auto; }
+.menubar .right { margin-left: auto; display: flex; align-items: center; gap: 1px; flex: 0 0 auto; }
+
+/* Dar ekranda önce tarih, sonra ikincil göstergeler düşer — saat en son. */
+@media (max-width: 760px) {
+  .menubar .mb-date { display: none; }
+}
+@media (max-width: 620px) {
+  .menubar .status.ikincil { display: none; }
+  .menubar .mb.appname { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+}
+@media (max-width: 480px) {
+  .menubar > .row .mb:not(.brand):not(.appname) { display: none; }
+}
 .menubar .status { display: flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px;
   border-radius: 5px; transition: background var(--t-fast); cursor: inherit; }
 .menubar .status:hover { background: var(--hairline); }

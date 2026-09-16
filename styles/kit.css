@@ -284,7 +284,16 @@
   position: relative;
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
+  /* Kabuk hiçbir koşulda çapraz eksende çökmemeli. `align-self: auto`
+     kaldığında yüksekliği ebeveynin `align-items` değerine kalıyor; o
+     değer `stretch` değilse kabuk içeriğine, içerideki `min-height: 0`
+     olan gövde de sıfıra iniyor ve uygulamanın içerik bölmesi boş
+     görünüyor — pencere çerçevesi yerinde dururken. */
+  align-self: stretch;
 }
+/* Kabuk esnek bir satırın içindeyse yeri korunmalı: `flex` kopyalanırken
+   `0 1 auto` gelen bir değer, kabuğu içerik genişliğine düşürebiliyor. */
+.app-shell > .os-scroll-host { flex: 1 1 0%; min-height: 0; }
 .os-scroll-host > .os-scroll-body {
   flex: 1 1 auto; min-width: 0; min-height: 0;
   margin: 0; max-height: none;

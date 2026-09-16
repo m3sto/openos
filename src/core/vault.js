@@ -32,14 +32,37 @@ const ANAHTAR_ADI = 'disk';
 
 /* ------------------------------------------------------------ IndexedDB */
 
+/**
+ * Veritabanını açar ve deponun gerçekten var olduğunu doğrular.
+ *
+ * `onupgradeneeded` yalnızca sürüm yükselirken çalışır. Aynı adlı bir
+ * veritabanı başka bir kodla (eski bir sürüm, bir tanılama betiği, bir
+ * uzantı) sürüm 1'de depo oluşturulmadan açılmışsa, bundan sonraki her
+ * açılış "zaten var" der, yükseltme hiç tetiklenmez ve her işlem
+ * "object store not found" ile düşer — kasa kalıcı olarak bozulur ve
+ * sistem sessizce şifresiz yazmaya başlar.
+ *
+ * Bu yüzden açılıştan sonra depo *doğrulanır*; yoksa sürüm bir artırılıp
+ * yeniden açılarak oluşturulur. Doğrulama olmadan bu hata kendini ancak
+ * "bu tarayıcıda WebCrypto yok" gibi yanlış bir teşhisle gösteriyordu.
+ */
 function db() {
-  return new Promise((çöz, sapt) => {
-    const istek = indexedDB.open(DB_ADI, 1);
+  const ac = (surum) => new Promise((çöz, sapt) => {
+    const istek = surum ? indexedDB.open(DB_ADI, surum) : indexedDB.open(DB_ADI);
     istek.onupgradeneeded = () => {
       if (!istek.result.objectStoreNames.contains(DEPO)) istek.result.createObjectStore(DEPO);
     };
     istek.onsuccess = () => çöz(istek.result);
     istek.onerror = () => sapt(istek.error);
+    istek.onblocked = () => sapt(new Error('Veritabanı başka bir sekmede kilitli'));
+  });
+
+  return ac().then(d => {
+    if (d.objectStoreNames.contains(DEPO)) return d;
+    /* Depo yok: sürümü bir artırıp yükseltmeyi zorla. */
+    const yeniSurum = d.version + 1;
+    d.close();
+    return ac(yeniSurum);
   });
 }
 
@@ -103,8 +126,43 @@ class Vault {
       return true;
     } catch (e) {
       this.sebep = e.message;
+      this.hazirMi = false;
       return false;
     }
+  }
+
+  /**
+   * Kasa neden kullanılamıyor? Depolama katmanı sessizce düz metne
+   * düştüğünde kullanıcıya doğru nedeni söyleyebilmek için — "bu tarayıcı
+   * desteklemiyor" ile "veritabanı bozulmuş" farklı şeyler ve farklı
+   * çözümleri var.
+   */
+  get durum() {
+    if (this.hazirMi) return { ok: true, kod: 'hazir' };
+    if (!crypto?.subtle) return { ok: false, kod: 'webcrypto-yok',
+      ileti: 'Bu tarayıcı WebCrypto sunmuyor. Şifreleme kullanılamıyor.' };
+    if (!window.indexedDB) return { ok: false, kod: 'idb-yok',
+      ileti: 'Bu tarayıcı IndexedDB sunmuyor. Anahtar saklanamıyor.' };
+    if (/object store|not found/i.test(this.sebep || '')) return { ok: false, kod: 'depo-bozuk',
+      ileti: 'Anahtar veritabanı bozulmuş. Depolama → Güvenlik’ten onarabilirsiniz.' };
+    return { ok: false, kod: 'bilinmeyen', ileti: this.sebep || 'Bilinmeyen bir sorun.' };
+  }
+
+  /**
+   * Bozulmuş anahtar veritabanını onarır: veritabanını tamamen siler ve
+   * yeniden kurar. Eski anahtar gittiği için o anahtarla şifrelenmiş veri
+   * artık okunamaz — bu yüzden çağıran önce diski düz metin olarak
+   * okuyabildiğinden emin olmalı.
+   */
+  async onar() {
+    this.anahtar = null;
+    this.hazirMi = false;
+    this.sebep = null;
+    await new Promise(çöz => {
+      const istek = indexedDB.deleteDatabase(DB_ADI);
+      istek.onsuccess = istek.onerror = istek.onblocked = () => çöz();
+    });
+    return this.ac();
   }
 
   /** @returns {Promise<string>} saklanmaya hazır şifreli paket */

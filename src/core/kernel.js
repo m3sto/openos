@@ -16,6 +16,7 @@ import { installTextControls } from '../ui/textfield.js';
 import { openFile, saveFile } from '../ui/filedialog.js';
 import { paketOku, paketMi } from '../lang/package.js';
 import clipboard from './clipboard.js';
+import vault from './vault.js';
 import pkg from './pkgmanager.js';
 import permissions from './permissions.js';
 import { toggleShortcuts, closeShortcuts } from '../ui/shortcuts.js';
@@ -101,6 +102,25 @@ export class Kernel {
     this.loadUserApps();
 
     this.bus.emit('ready');
+    /* Disk şifresiz yazılmaya başladıysa kullanıcı bunu bilmeli. */
+    /* Diske yazılamıyorsa bu, kullanıcının bilmesi gereken en önemli şey:
+       o andan sonra yaptığı her şey uçucu. */
+    vfs.bus.on('yazilamadi', h => notify.post({
+      title: h.kota ? 'Disk dolu — değişiklikler kaydedilmiyor' : 'Diske yazılamıyor',
+      body: h.kota
+        ? 'Tarayıcının depolama alanı doldu. Çöp kutusunu boşaltın ya da büyük dosyaları silin; o zamana dek yaptığınız değişiklikler kalıcı olmayacak.'
+        : `Değişiklikler kaydedilemiyor: ${h.ileti}`,
+      glyph: 'alert', timeout: 0,
+      actions: [{ label: 'Depolama’yı aç', run: () => this.openApp('storage') }],
+    }));
+
+    vfs.bus.on('sifresiz', durum => notify.post({
+      title: 'Disk şifrelenemiyor',
+      body: (durum?.ileti || 'Anahtar kasası açılamadı.') + ' Veriler şifresiz saklanıyor.',
+      glyph: 'unlock', timeout: 0,
+      actions: [{ label: 'Depolama’yı aç', run: () => this.openApp('storage') }],
+    }));
+
     if (vfs.kasaHatasi === 'cozulemedi') {
       setTimeout(() => notify.post({
         title: 'Disk çözülemedi',
@@ -275,6 +295,20 @@ export class Kernel {
     notify.toast(`${n} öğe silindi`, { glyph: '🗑️' });
     this.bus.emit('fs:trash');
     return true;
+  }
+
+  /**
+   * Bir uygulamanın açık pencerelerini kapatır. Ajan arayüzünde vardı ama
+   * çekirdekte yoktu; iç kod bu yüzden `wm.closeAll` ile dolaşıyordu.
+   * @param {boolean} [zorla] kapanış onayını atla (görev yöneticisi gibi)
+   */
+  closeApp(id, { zorla = false } = {}) {
+    const pencereler = wm.byApp(id);
+    for (const w of pencereler) {
+      if (zorla) w.onBeforeClose = null;
+      w.close();
+    }
+    return pencereler.length;
   }
 
   recentApps() { return this.recent.map(id => registry.get(id)).filter(Boolean); }

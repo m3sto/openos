@@ -77,20 +77,43 @@ export class VFS {
         if (await vault.ac()) {
           localStorage.setItem(KEY, await vault.sifrele(metin));
           this.sifreli = true;
+          this.yazmaHatasi = null;
         } else {
-          /* Kasa kurulamıyorsa veri kaybetmektense düz yazmak yeğdir;
-             durum `sifreli` alanından okunabilir ve Ayarlar'da görünür. */
+          /* Kasa kurulamıyorsa veri kaybetmektense düz yazmak yeğdir — ama
+             sessizce değil. Kullanıcı diskinin şifreli olduğunu sanırken
+             şifresiz yazmak, koruma vaadini sessizce geri almak olur. */
           localStorage.setItem(KEY, metin);
+          this.yazmaHatasi = null;
+          const oncekiDurum = this.sifreli;
           this.sifreli = false;
+          if (oncekiDurum !== false && !this._sifresizUyarildi) {
+            this._sifresizUyarildi = true;
+            this.bus.emit('sifresiz', vault.durum);
+          }
         }
       }
     } catch (e) {
-      console.warn('[vfs] persist failed (quota?)', e);
+      /* Yazma başarısız oldu — neredeyse her zaman kota. Bunu bir konsol
+         uyarısına gömmek, kullanıcının çalışmaya devam edip yeniden
+         açılışta son başarılı kayıttan sonrasını kaybetmesi demek. Bir
+         işletim sisteminde "diske yazamadım" sessiz kalabilecek bir olay
+         değil. */
+      const kota = /quota|exceeded|NS_ERROR_DOM_QUOTA/i.test(e.name + ' ' + e.message);
+      this.yazmaHatasi = { kota, ileti: e.message, zaman: now() };
+      console.error('[vfs] diske yazılamadı', e);
+      /* Aynı hatayı her tuş vuruşunda bildirmemek için kısılır. */
+      if (!this._hataBildirildi || now() - this._hataBildirildi > 60000) {
+        this._hataBildirildi = now();
+        this.bus.emit('yazilamadi', this.yazmaHatasi);
+      }
     } finally {
       this._yaziyor = null;
       this._tekrar = false;
     }
   }
+
+  /** Son yazma denemesi başarılı mıydı? Durum çubukları buna bakar. */
+  get saglamMi() { return !this.yazmaHatasi; }
 
   /** Bekleyen yazımın bitmesini bekler (kapanış, fabrika ayarları vb.). */
   async flush() { if (this._yaziyor) await this._yaziyor; }

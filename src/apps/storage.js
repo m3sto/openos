@@ -8,6 +8,7 @@ import { h, clear, on, fmtBytes, relTime } from '../core/util.js';
 import { icon } from '../core/icons.js';
 import { contextMenu } from '../ui/menu.js';
 import vfs, { VFS } from '../core/vfs.js';
+import vault from '../core/vault.js';
 import notify from '../core/notify.js';
 
 export default {
@@ -53,6 +54,54 @@ class Storage {
       }
     }
     return { bytes, files, dirs, newest };
+  }
+
+  /**
+   * Şifreleme durumu. Eskiden şifresizlik tek bir nedenle açıklanıyordu
+   * ("bu tarayıcı desteklemiyor"); oysa en sık neden anahtar
+   * veritabanının bozulması ve bunun çözümü farklı. Durum kasadan
+   * okunuyor ve onarılabilir olan hâller için düğme gösteriliyor.
+   */
+  guvenlikSatiri() {
+    const d = vault.durum;
+    const sifreli = vfs.sifreli && d.ok;
+
+    return h('div.k-row',
+      h('span.ic', { html: icon(sifreli ? 'lock' : 'unlock', 15),
+        style: { color: sifreli ? 'var(--green, #30d158)'
+                : d.kod === 'depo-bozuk' ? 'var(--red)' : 'var(--orange, #ff9f0a)' } }),
+      h('div', { style: { flex: 1 } },
+        h('div.k-text', { text: sifreli ? 'Disk şifreli' : 'Disk şifresiz' }),
+        h('div.k-text.t-caption', {
+          text: sifreli
+            ? 'AES-256-GCM · anahtar bu cihazda, dışa aktarılamaz. Depolamayı doğrudan okuyan ya da elle kurcalayan erişime kapalı.'
+            : (d.ileti || 'Anahtar kasası açılamadı.') })),
+      d.kod === 'depo-bozuk' || (!sifreli && d.kod === 'bilinmeyen')
+        ? h('button.k-btn.s-sm', { text: 'Onar', onclick: () => this.kasayiOnar() })
+        : null);
+  }
+
+  /** Anahtar kasasını yeniden kurar ve diski şifreli olarak tazeler. */
+  async kasayiOnar() {
+    const ok = await notify.confirm(
+      'Anahtar kasası yeniden kurulacak ve disk şifreli olarak yeniden yazılacak. ' +
+      'Dosyalarınız olduğu yerde kalır.',
+      { title: 'Şifrelemeyi onar', ok: 'Onar', root: this.el });
+    if (!ok) return;
+    try {
+      const acildi = await vault.onar();
+      if (!acildi) throw new Error(vault.durum.ileti);
+      vfs._sifresizUyarildi = false;
+      await vfs.persist();
+      await vfs.flush();
+      notify.post({ title: 'Şifreleme onarıldı',
+        body: vfs.sifreli ? 'Disk artık şifreli saklanıyor.' : 'Kasa açıldı ama disk hâlâ şifresiz.',
+        glyph: 'lock' });
+    } catch (e) {
+      notify.toast('Onarılamadı: ' + e.message, { glyph: '⚠️' });
+    }
+    this.render?.();
+    this.refresh?.();
   }
 
   /**
@@ -206,16 +255,7 @@ class Storage {
             h('div.k-text.t-caption', { text: 'Birleştir: yedektekiler eklenir. Değiştir: disk tamamen yedeğe döner.' })),
           h('button.k-btn.s-sm', { text: 'Dosya Seç…', onclick: () => this.yedektenYukle() }))),
       h('div.k-sectitle', { text: 'Güvenlik' }),
-      h('div.k-group',
-        h('div.k-row',
-          h('span.ic', { html: icon(vfs.sifreli ? 'lock' : 'unlock', 15),
-            style: { color: vfs.sifreli ? 'var(--green, #30d158)' : 'var(--orange, #ff9f0a)' } }),
-          h('div', { style: { flex: 1 } },
-            h('div.k-text', { text: vfs.sifreli ? 'Disk şifreli' : 'Disk şifresiz' }),
-            h('div.k-text.t-caption', {
-              text: vfs.sifreli
-                ? 'AES-256-GCM · anahtar bu cihazda, dışa aktarılamaz. Depolamayı doğrudan okuyan ya da elle kurcalayan erişime kapalı.'
-                : 'Bu tarayıcı WebCrypto ya da IndexedDB sunmuyor; veri düz saklanıyor.' })))),
+      h('div.k-group', this.guvenlikSatiri()),
       h('div.k-sectitle', { text: 'Yeri kaplayanlar' }),
     );
 

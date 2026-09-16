@@ -309,9 +309,43 @@ export class Win {
     this.wm.bus.emit('restore', this);
   }
 
+  /**
+   * Kapatır. `onBeforeClose` eşzamansız olabilir — metin düzenleyici
+   * "kaydedilmemiş değişiklik" sorusunu böyle soruyor. Eski sürüm dönen
+   * değeri doğrudan `=== false` ile karşılaştırıyordu; bir Promise hiçbir
+   * zaman `false`'a eşit olmadığı için koruma hiç çalışmıyor, pencere
+   * cevabı beklemeden kapanıyor ve soruyu gösteren diyalog da penceresiyle
+   * birlikte yok oluyordu. Yani uyarı vardı ama kimse göremiyordu ve
+   * kaydedilmemiş veri sessizce gidiyordu.
+   */
   close() {
+    if (this._closing || this._soruluyor) return;
+
+    if (this.onBeforeClose) {
+      let sonuc;
+      try { sonuc = this.onBeforeClose(); }
+      catch (e) { console.warn('[win] onBeforeClose hata verdi', e); sonuc = true; }
+
+      if (sonuc && typeof sonuc.then === 'function') {
+        /* Soru sorulurken ikinci bir kapatma isteği yok sayılır. */
+        this._soruluyor = true;
+        sonuc.then(izin => {
+          this._soruluyor = false;
+          if (izin !== false) this._kapat();
+        }).catch(e => {
+          this._soruluyor = false;
+          console.warn('[win] kapanış onayı başarısız', e);
+        });
+        return;
+      }
+      if (sonuc === false) return;
+    }
+    this._kapat();
+  }
+
+  /** Asıl kapanış — onay aşaması geçildikten sonra. */
+  _kapat() {
     if (this._closing) return;
-    if (this.onBeforeClose && this.onBeforeClose() === false) return;
     this._closing = true;
     this.el.classList.add('closing');
     this.wm.bus.emit('close', this);
