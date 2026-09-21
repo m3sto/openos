@@ -16,6 +16,7 @@
 
 import { h, clear, on, fmtBytes } from '../core/util.js';
 import { icon } from '../core/icons.js';
+import services from '../core/services.js';
 import { contextMenu } from '../ui/menu.js';
 import { appIcon } from '../ui/appicon.js';
 import vfs from '../core/vfs.js';
@@ -58,6 +59,7 @@ class TaskManager {
       sekme('Süreçler', 'surecler'),
       sekme('Bellek', 'bellek'),
       sekme('Disk', 'disk'),
+      sekme('Servisler', 'servisler'),
       h('div.k-spacer'),
       h('button.k-btn.v-danger.s-sm', { html: icon('x', 12), text: ' Sonlandır',
         onclick: () => this.sonlandir() }),
@@ -147,6 +149,7 @@ class TaskManager {
   /* ------------------------------------------------------------- çizim */
   ciz() {
     if (this.gorunum === 'surecler') this.cizSurecler();
+    else if (this.gorunum === 'servisler') this.cizServisler();
     else if (this.gorunum === 'bellek') this.cizBellek();
     else this.cizDisk();
     this.cizAltBilgi();
@@ -236,6 +239,46 @@ class TaskManager {
       ]);
       this.tablo.appendChild(satir);
     }
+  }
+
+  /**
+   * Arka plan servisleri: uygulamalardan bağımsız çalışan işler. Alarmın
+   * Saat penceresi kapalıyken de çalmasını sağlayan katman burası; hangi
+   * servisin kaç kez çalıştığı ve hata alıp almadığı burada görünür —
+   * sessizce ölen bir servis en kötü servistir.
+   */
+  cizServisler() {
+    clear(this.ozet);
+    const liste = services.list();
+    const toplamHata = liste.reduce((n, s) => n + s.hata, 0);
+    this.ozet.append(
+      this.kart('Servis', String(liste.length), 'arka planda çalışan'),
+      this.kart('Çalışma', String(liste.reduce((n, s) => n + s.sayac, 0)), 'açılıştan beri'),
+      this.kart('Hata', String(toplamHata), toplamHata ? 'incelenmeli' : 'sorun yok'),
+    );
+
+    clear(this.tablo);
+    this.tablo.appendChild(h('div.tm-row.tm-head',
+      h('span', { text: 'Servis' }), h('span', { text: 'Uygulama' }),
+      h('span', { text: 'Aralık' }), h('span', { text: 'Çalışma' }), h('span', { text: 'Durum' })));
+
+    if (!liste.length) {
+      this.tablo.appendChild(h('div.tm-empty', { text: 'Kayıtlı servis yok' }));
+      return;
+    }
+    for (const s of liste) {
+      this.tablo.appendChild(h('div.tm-row',
+        h('span', { text: s.ad }),
+        h('span.dim', { text: s.uygulama || '—' }),
+        h('span.dim', { text: (s.her / 1000) + ' sn' }),
+        h('span.dim', { text: String(s.sayac) }),
+        s.hata
+          ? h('span.k-badge.b-red', { text: `${s.hata} hata`, title: s.sonHata || '' })
+          : h('span.k-badge.b-green', { text: s.aktif ? 'çalışıyor' : 'durdu' })));
+    }
+    this.altBilgi.textContent = liste.length
+      ? `Son çalışma: ${new Date(Math.max(...liste.map(s => s.sonCalisma))).toLocaleTimeString('tr-TR')}`
+      : '';
   }
 
   cizBellek() {

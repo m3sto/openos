@@ -22,6 +22,9 @@ import permissions from './permissions.js';
 import { toggleShortcuts, closeShortcuts } from '../ui/shortcuts.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
+import services from './services.js';
+import sesler from './sounds.js';
+import { alarmServisiniKur } from '../services/alarms.js';
 import { seedFilesystem, ensureTree, seedGuide, KILAVUZ_YOLU } from './seed.js';
 import { thumb } from '../wallpapers/generator.js';
 import { COMPONENT_NAMES } from '../lang/runtime.js';
@@ -159,7 +162,37 @@ export class Kernel {
     clipboard.install(document);
     /* Hiçbir bağlantı OpenOS'un dışına çıkmaz. */
     this.baglantilariYakala();
+    /* Sistem sesleri: bağlam kullanıcının ilk dokunuşunda kuruluyor. */
+    sesler.install(document);
+    this.seslariBagla();
+    /* Arka plan servisleri: pencereler kapalıyken de çalışan işler. */
+    this.servisleriKur();
     this.playHomeEntrance();
+  }
+
+  /**
+   * Arka plan servislerini kurar ve çalıştırır.
+   *
+   * Servisler uygulamalardan bağımsız: Saat penceresi kapalıyken de alarm
+   * çalmalı. Uygulama listeyi gösteriyor, servis saate bakıp bildirimi
+   * düşürüyor.
+   */
+  servisleriKur() {
+    alarmServisiniKur();
+    services.start();
+    this.services = services;
+  }
+
+  /** Sistem olaylarını seslere bağlar. */
+  seslariBagla() {
+    if (this._seslerBagli) return;
+    this._seslerBagli = true;
+    wm.bus.on('open',     () => sesler.cal('ac'));
+    wm.bus.on('close',    () => sesler.cal('kapat'));
+    wm.bus.on('minimize', () => sesler.cal('kucult'));
+    wm.bus.on('state',    w => sesler.cal(w.state === 'normal' ? 'kucult' : 'buyult'));
+    notify.bus?.on?.('post', n => sesler.cal(n?.glyph === 'alert' ? 'uyari' : 'bildirim'));
+    vfs.bus?.on?.('trash', () => sesler.cal('cop'));
   }
 
   /**

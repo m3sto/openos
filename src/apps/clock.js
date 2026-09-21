@@ -75,7 +75,7 @@ class Clock {
     if (this.tab === 'world') this.paintWorld();
     if (this.tab === 'stopwatch') this.paintStopwatch();
     if (this.tab === 'timer') this.paintTimer();
-    this.checkAlarms();
+    this.alarmlariTazele();
   }
 
   /* ==================== dünya saati ==================== */
@@ -235,22 +235,23 @@ class Clock {
         h('div.k-field', { style: { width: '130px' } }, time),
         h('div.k-field', { style: { flex: 1 } }, label), add),
       list,
-      h('div.k-text.t-caption', { text: 'Alarmlar yalnızca OpenOS açıkken çalar — bir web uygulaması sekme kapalıyken sizi uyandıramaz.' }));
+      h('div.k-text.t-caption', { text: 'Alarmlar Saat kapalıyken de çalar — sistem servisi olarak arka planda çalışıyorlar. Yalnızca OpenOS sekmesi tamamen kapatılırsa durur.' }));
   }
 
-  checkAlarms() {
-    if (!this.alarms.length) return;
-    const now = new Date();
-    const hhmm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-    const today = now.toDateString();
-    this.alarms.forEach(a => {
-      if (!a.on || a.at !== hhmm || a.firedOn === today) return;
-      a.firedOn = today;
-      this.save();
-      notify.post({ title: a.label || 'Alarm', body: hhmm, glyph: 'bell',
-        tint: ['#ff9f0a', '#c96f00'], timeout: 0 });
-      beep();
-    });
+  /**
+   * Alarmları artık bu pencere çalmıyor: işi `services/alarms.js` yapıyor ve
+   * pencere kapalıyken de çalışıyor. Burada yalnızca servisin diske yazdığı
+   * durumu geri okuyoruz — yoksa çalmış bir alarm listede hâlâ bekliyormuş
+   * gibi görünürdü.
+   */
+  alarmlariTazele() {
+    const veri = vfs.readJSON(STORE(), null);
+    if (!veri || !Array.isArray(veri.alarms)) return;
+    const damga = JSON.stringify(veri.alarms);
+    if (damga === this._alarmDamgasi) return;
+    this._alarmDamgasi = damga;
+    this.alarms = veri.alarms;
+    if (this.tab === 'alarm') this.render();
   }
 }
 

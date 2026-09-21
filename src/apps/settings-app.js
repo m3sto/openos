@@ -10,6 +10,7 @@ import vfs, { VFS } from '../core/vfs.js';
 import registry from '../core/registry.js';
 import permissions, { IZINLER } from '../core/permissions.js';
 import notify from '../core/notify.js';
+import sesler from '../core/sounds.js';
 import cloud from '../core/cloud.js';
 import { WALLPAPERS, thumb } from '../wallpapers/generator.js';
 
@@ -332,9 +333,21 @@ class SettingsApp {
   }
 
   p_sound() {
+    /* Sesler dosyadan çalınmıyor, Web Audio ile sentezleniyor — burada
+       dinlenebilmeleri lazım, yoksa neyin ne olduğu yalnızca kullanırken
+       anlaşılıyor. */
+    const dene = (ad, etiket) => h('button.k-btn.s-sm', {
+      html: icon('volume', 12), text: ' ' + etiket,
+      onclick: () => sesler.cal(ad),
+    });
     this.group('Ses',
       this.row('volume', 'var(--pink)', 'Ana ses', null, this.slider('system.volume', 0, 100, v => Math.round(v) + '%')),
-      this.row('bell', 'var(--orange)', 'Bildirim sesi', null, this.toggle('system.sounds')),
+      this.row('bell', 'var(--orange)', 'Arayüz sesleri', 'Pencere, bildirim, çöp kutusu ve uyarı sesleri',
+        this.toggle('system.sounds')),
+      this.row('sparkles', 'var(--purple)', 'Sesleri dinle', 'Sistemin kendi sentezlediği efektler',
+        h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' } },
+          dene('ac', 'Pencere'), dene('bildirim', 'Bildirim'),
+          dene('basari', 'Başarı'), dene('hata', 'Hata'), dene('alarm', 'Alarm'))),
     );
     this.group('Ekran',
       this.row('brightness', 'var(--yellow)', 'Parlaklık', null, this.slider('system.brightness', 25, 100, v => Math.round(v) + '%')),
