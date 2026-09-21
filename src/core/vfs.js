@@ -11,6 +11,15 @@ import vault, { Vault } from './vault.js';
 const KEY = 'openos.fs.v1';
 
 const now = () => Date.now();
+/**
+ * Okunan kökün gerçekten bir dizin düğümü olup olmadığı. Bozuk ya da yabancı
+ * bir disk görüntüsü çekirdeği açılışta düşürmemeli: `mkdir` ilk segmentte
+ * `cur.c[s]` okuyor ve `c` yoksa hata "undefined'ın 'Users' özelliği
+ * okunamıyor" diye çıkıyor — nedeni hiç anlatmayan bir mesaj.
+ */
+const gecerliKok = (k) => !!k && typeof k === 'object' && k.t === 'd'
+                          && !!k.c && typeof k.c === 'object';
+
 const dirNode  = (name) => ({ t: 'd', n: name, c: {}, ct: now(), mt: now(), meta: {} });
 const fileNode = (name, content = '', meta = {}) =>
   ({ t: 'f', n: name, b: content, ct: now(), mt: now(), meta });
@@ -49,8 +58,16 @@ export class VFS {
     if (this.depo) {
       try {
         const metin = await this.depo.oku();
-        if (metin == null) return false;
-        this.root = JSON.parse(metin);
+        /* Yeni oluşturulmuş disk boş yük taşır: veri yok demektir, hata değil.
+           Kurucudaki boş kök olduğu gibi kalır ve ilk açılış akışı işler. */
+        if (metin == null || !metin.trim()) return false;
+        const kok = JSON.parse(metin);
+        if (!gecerliKok(kok)) {
+          console.error('[vfs] disk tanınmayan bir biçimde', kok && Object.keys(kok));
+          this.kasaHatasi = 'bicim';
+          return false;
+        }
+        this.root = kok;
         this.sifreli = true;
         return true;
       } catch (e) {
@@ -71,7 +88,9 @@ export class VFS {
         return false;
       }
       try {
-        this.root = JSON.parse(await vault.coz(raw));
+        const kok = JSON.parse(await vault.coz(raw));
+        if (!gecerliKok(kok)) { this.kasaHatasi = 'bicim'; return false; }
+        this.root = kok;
         this.sifreli = true;
         return true;
       } catch (e) {

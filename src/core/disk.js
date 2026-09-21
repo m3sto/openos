@@ -245,7 +245,14 @@ class Makineler {
       hatirla: false,
     };
     const depo = new KlasorDepo(dizin, anahtar, tuz, makine);
-    await depo.yaz('{"name":"","type":"dir","children":{}}');   /* boş kök */
+    /* Boş bir yük yazılıyor — düğüm biçimi bilerek burada yok. Disk katmanı
+       dosya sisteminin iç yapısını bilirse iki yerde iki gerçek olur ve
+       biri değiştiğinde diğeri sessizce yanlış kalır; ilk denemede tam da
+       bu oldu ve çekirdek açılışta çöktü. `vfs` boş yükü "veri yok" diye
+       okuyup kendi boş kökünü kuruyor. Yine de şifreli yazılıyor: "varolan
+       diski aç" yolunun parolayı doğrulayabilmesi için geçerli bir
+       görüntüye ihtiyacı var. */
+    await depo.yaz('');
     if (hatirla) await this.anahtariSakla(makine, anahtar);
     await this.kaydet(makine);
     return depo;
