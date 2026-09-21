@@ -36,6 +36,9 @@ const EXT_APP = {
   mp3: 'music', wav: 'music', html: 'browser',
 };
 
+/* Gezilmek yerine indirilmesi gereken uzantılar. */
+const INDIRILEBILIR = /\.(zip|7z|rar|tar|gz|tgz|bz2|xz|exe|msi|dmg|pkg|deb|rpm|apk|iso|img|bin|jar|pdf|docx?|xlsx?|pptx?|odt|ods|epub|mobi|mp3|wav|flac|ogg|m4a|mp4|mkv|avi|mov|webm|psd|ai|ttf|otf|woff2?|osapp)$/i;
+
 export class Kernel {
   constructor() {
     this.bus = new Bus();
@@ -154,7 +157,56 @@ export class Kernel {
     /* Sistemin kendi panosu: kopyalanan şey OpenOS'ta kalır, ana
        bilgisayarın panosundan da içeri bir şey sızmaz. */
     clipboard.install(document);
+    /* Hiçbir bağlantı OpenOS'un dışına çıkmaz. */
+    this.baglantilariYakala();
     this.playHomeEntrance();
+  }
+
+  /**
+   * Sistem içindeki her bağlantıyı yakalar ve OpenBrow'a yönlendirir.
+   *
+   * OpenOS'un kendisi bir web sayfası, dolayısıyla belgesinde duran sıradan
+   * bir `<a href="https://…">` tıklandığında ana tarayıcı ya sayfadan çıkıyor
+   * ya da yeni bir sekme açıyordu — kullanıcı OpenBrow'da gezindiğini sanırken
+   * aslında sistemin dışına atılıyordu. İndirilebilir bir bağlantıda ise
+   * indirme OpenOS'un sanal diskine değil ana bilgisayarın diskine gidiyordu.
+   *
+   * Bu, tek tek uygulamalarda düzeltilebilecek bir hata değil: Markdown
+   * çizici, README görüntüleyici, yardım sayfaları ve sonradan yazılacak her
+   * OpenSharp uygulaması aynı tuzağa düşebilir. Bu yüzden kural sistemin
+   * kendisinde: köke yakalama aşamasında bağlanır, uygulamaların bir şey
+   * yapmasına gerek kalmaz.
+   *
+   * Dokunulmayanlar: sayfa içi çapalar, `mailto:`/`tel:`, ve `download`
+   * özniteliği taşıyan `blob:`/`data:` bağlantıları — sonuncusu sistemin
+   * kendi dışa aktarma yolu (Depolama › Yedek al) ve çalışmaya devam etmeli.
+   */
+  baglantilariYakala() {
+    if (this._baglantiYakalayici) return;
+    this._baglantiYakalayici = (e) => {
+      if (e.defaultPrevented || e.button !== 0) return;
+      const a = e.target?.closest?.('a[href]');
+      if (!a) return;
+      const href = a.getAttribute('href') || '';
+      if (!href || href.startsWith('#')) return;
+      if (/^(mailto:|tel:)/i.test(href)) return;
+      /* Sistemin kendi dosya dışa aktarması: olduğu gibi bırakılır. */
+      if (/^(blob:|data:)/i.test(href) && a.hasAttribute('download')) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      let mutlak = href;
+      try { mutlak = new URL(href, location.href).href; } catch {}
+
+      /* İndirilebilir görünen bağlantı OpenBrow'un indiricisine gider ve
+         dosya sanal diske iner; geri kalanı sekmede açılır. */
+      const indirme = a.hasAttribute('download') || INDIRILEBILIR.test(mutlak.split('?')[0]);
+      this.openApp('browser', indirme
+        ? { indir: mutlak, ad: a.getAttribute('download') || '' }
+        : { url: mutlak, newTab: true });
+    };
+    document.addEventListener('click', this._baglantiYakalayici, true);
   }
 
   /** The iOS-style entrance: the shell drops in from above and springs into place. */

@@ -83,18 +83,32 @@ class OpenBrow {
        bunu kullanıyor, uygulamanın kendi davranışına etkisi yok. */
     ctx.win.appInstance = this;
     const a = ctx.args || {};
-    this.newTab(a.url || (a.query ? this.searchUrl(a.query) : settings.get('browser.homepage')), { focus: true });
+    if (a.indir) {
+      /* Sistem, indirilebilir bir bağlantıyı buraya yönlendirdi: sekme
+         açmadan doğrudan indir. Açılışta boş kalmasın diye ana sayfa yüklenir. */
+      this.newTab(settings.get('browser.homepage'), { focus: true });
+      this.indir(a.indir, a.ad);
+    } else {
+      this.newTab(a.url || (a.query ? this.searchUrl(a.query) : settings.get('browser.homepage')), { focus: true });
+    }
   }
 
   handleArgs(a = {}) {
-    if (a.url) this.newTab(a.url, { focus: true });
+    if (a.indir) this.indir(a.indir, a.ad);
+    else if (a.url) this.newTab(a.url, { focus: true });
     else if (a.query) this.newTab(this.searchUrl(a.query), { focus: true });
   }
 
   /* ================== chrome ================== */
   build() {
     /* --- sekme şeridi: pencerenin kendi başlık çubuğunda yaşar --- */
-    this.tabstrip = h('div.ob-tabs.no-drag');
+    /* Şeridin kendisi sürüklenebilir kalır; `no-drag` yalnızca tek tek
+       sekmelerin ve düğmelerin üstünde. Şerit bir bütün olarak işaretliyken
+       OpenBrow penceresi başlık panelinden hiç taşınamıyordu: sekme çubuğu
+       paneli baştan sona kaplıyor ve sürüklenecek boş alan bırakmıyordu.
+       Şimdi sekmelerin arası ve sağındaki boşluk pencereyi taşır — tarayıcı
+       pencerelerinin her yerdeki davranışı budur. */
+    this.tabstrip = h('div.ob-tabs');
     this.newTabBtn = h('button.ob-newtab.no-drag', { html: icon('plus', 14), title: 'Yeni sekme (⌘T)',
       onclick: () => this.newTab(settings.get('browser.homepage'), { focus: true }) });
     const win = this.ctx.win;
@@ -231,7 +245,7 @@ class OpenBrow {
     clear(this.tabstrip);
     this.el.classList.toggle('single', this.tabs.length <= 1);
     this.tabs.forEach(t => {
-      const el = h('div.ob-tab', {
+      const el = h('div.ob-tab.no-drag', {
         class: [t === this.active ? 'on' : '', t.private ? 'priv' : ''].filter(Boolean).join(' '),
         onauxclick: e => { if (e.button === 1) this.closeTab(t); },
       },
