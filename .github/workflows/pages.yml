@@ -1,0 +1,58 @@
+# ==========================================================================
+# OpenOS · GitHub Pages yayını
+#
+# Depo artık doğrudan yayınlanamıyor: kaynak dosyalar Vite sözdizimi
+# (`import.meta.glob`, `?raw`) içeriyor ve tarayıcı bunları anlamıyor.
+# Yayınlanan şey `dist/`, yani derlenmiş çıktı.
+#
+# ÖNEMLİ — bir kereye mahsus ayar: depo ayarlarında
+#   Settings › Pages › Build and deployment › Source
+# "Deploy from a branch" yerine "GitHub Actions" seçilmeli. Aksi halde bu
+# akış çalışır ama Pages hâlâ eski kök dosyaları yayınlamaya devam eder.
+# ==========================================================================
+
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Aynı anda tek yayın; sıradaki beklesin, çalışan iptal edilmesin.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

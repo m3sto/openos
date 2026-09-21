@@ -3,6 +3,7 @@
    ========================================================================== */
 
 import vfs, { VFS } from './vfs.js';
+import KILAVUZ_METNI from '../../docs/OPENSHARP.md?raw';
 
 export const EXAMPLES = {
   'Sayaç.osh': `# Sayaç — OpenSharp'a hızlı bir giriş
@@ -363,9 +364,9 @@ export const KILAVUZ_YOLU = '/Applications/docs/OPENSHARP.md';
 
 export async function seedGuide() {
   try {
-    const r = await fetch('docs/OPENSHARP.md', { cache: 'no-store' });
-    if (!r.ok) return false;
-    const metin = await r.text();
+    /* Kılavuz ağdan değil paketten geliyor: çevrimdışı da, alt dizinde
+       yayınlandığında da çalışsın ve bir istek eksilsin. */
+    const metin = KILAVUZ_METNI;
     if (!metin.trim()) return false;
     vfs.mkdir('/Applications/docs');
     vfs.write(KILAVUZ_YOLU, metin);

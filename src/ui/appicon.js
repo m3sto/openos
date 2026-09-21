@@ -9,34 +9,51 @@ import { h, on } from '../core/util.js';
 import { icon, hasIcon } from '../core/icons.js';
 import settings from '../core/settings.js';
 
-const BASE = 'assets/icons/apps/';
-/** id → çözülmüş url | 'glyph'  (oturum başına bir kez yoklanır) */
-const known = new Map();
+/* Simgeler derleme zamanında çözülüyor.
 
-/* Klasörün içeriği tek bir dizin dosyasından okunur. Yoklamayı kör yapmak
-   simgesi olmayan her uygulama için dört başarısız istek üretiyordu; konsol
-   404'lerle doluyor ve ağ boşuna meşgul ediliyordu. Dizin gelmezse eski
-   davranışa (kör yoklama) dönülür — çevrimdışı bir kopya da çalışsın. */
-let dizin = null;
-const dizinHazir = fetch(BASE + 'index.json')
-  .then(r => (r.ok ? r.json() : null))
-  .then(l => { dizin = Array.isArray(l) ? new Set(l) : null; })
-  .catch(() => { dizin = null; });
+   Önceki sürüm çalışma zamanında yol kuruyordu: `assets/icons/apps/<id>.webp`
+   dizesini elle birleştirip `<img>` ile yokluyor, hangi simgelerin var
+   olduğunu ayrı bir `index.json` isteğiyle öğreniyordu. Üç ayrı sorun
+   üretiyordu — dizin isteği gelmezse her uygulama için dört başarısız istek,
+   taban yolu değişince (alt dizinde yayın, `<base>` etiketi) yolların
+   kayması, ve parmak izli önbelleklemenin imkânsızlığı.
 
-/* WebP önce denenir: aynı görselin PNG'sinden ~7 kat küçük ve bu sistemi
-   çalıştırabilen her tarayıcı destekler. PNG ikinci sırada kalır, böylece
-   klasöre elle bırakılan PNG'ler de çalışır. */
-const EXTS = ['.webp', '.png'];
+   `import.meta.glob` bunların üçünü birden kaldırıyor: klasörün içeriği
+   derleme anında biliniyor, URL'leri paketleyici üretiyor (dolayısıyla taban
+   yolu ne olursa olsun doğru), ve dosyalar içeriğe göre adlandırılıp sonsuza
+   kadar önbelleklenebiliyor. Yoklama yok, dizin dosyası yok, 404 yok. */
+const VARLIKLAR = import.meta.glob('../../assets/icons/apps/*.{webp,png}', {
+  eager: true, query: '?url', import: 'default',
+});
 
-export function iconUrl(id, ext = '.webp', dark = false) {
-  return BASE + encodeURIComponent(id) + (dark ? '@dark' : '') + ext;
+/** id → { acik: url, koyu: url } */
+const SIMGELER = (() => {
+  const harita = new Map();
+  for (const [yol, url] of Object.entries(VARLIKLAR)) {
+    const ad = yol.split('/').pop().replace(/\.(webp|png)$/, '');
+    const koyuMu = ad.endsWith('@dark');
+    const id = koyuMu ? ad.slice(0, -5) : ad;
+    const kayit = harita.get(id) || {};
+    /* WebP, PNG'yi ezer: aynı görselin ~7 katı küçüğü ve bu sistemi
+       çalıştırabilen her tarayıcı destekliyor. */
+    const webpMi = yol.endsWith('.webp');
+    const alan = koyuMu ? 'koyu' : 'acik';
+    if (!kayit[alan] || webpMi) kayit[alan] = url;
+    harita.set(id, kayit);
+  }
+  return harita;
+})();
+
+/** Bir uygulamanın simge URL'i — yoksa null. */
+export function iconUrl(id, { koyu = false } = {}) {
+  const k = SIMGELER.get(id);
+  if (!k) return null;
+  return (koyu && k.koyu) || k.acik || k.koyu || null;
 }
 
-/**
- * appIcon(app, size) → element
- * `app` needs { id, glyph, tint }. Falls back gracefully and never flashes:
- * the glyph is rendered first and the PNG replaces it only once it decodes.
- */
+/** Kaç simge paketlendi — tanılama için. */
+export function iconCount() { return SIMGELER.size; }
+
 export function appIcon(app, size = 52, opts = {}) {
   const tint = app.tint || ['#8e8e93', '#5a5a60'];
   const box = h('div.app-icon', {
@@ -66,33 +83,9 @@ export function appIcon(app, size = 52, opts = {}) {
      sisteminde aramaya gerek yok. */
   if (app.iconUrl) { drawPng(app.iconUrl); return box; }
 
-  const state = known.get(app.id);
-  if (state === 'glyph' || !app.id) { drawGlyph(); return box; }
-  if (state) { drawPng(state); return box; }
-
-  /* Henüz bilinmiyor: önce glif çizilir, adaylar sırayla yoklanır ve ilk
-     yüklenen görsel glifin yerini alır — böylece hiç boş kare görünmez. */
-  drawGlyph();
-
-  const candidates = [];
-  if (settings.isDark) EXTS.forEach(e => candidates.push(iconUrl(app.id, e, true)));
-  EXTS.forEach(e => candidates.push(iconUrl(app.id, e, false)));
-
-  const tryNext = (i) => {
-    if (i >= candidates.length) { known.set(app.id, 'glyph'); return; }
-    const probe = new Image();
-    probe.onload = () => { known.set(app.id, candidates[i]); drawPng(candidates[i]); };
-    probe.onerror = () => tryNext(i + 1);
-    probe.src = candidates[i];
-  };
-
-  /* Dizin varsa ve id listede değilse tek bir istek bile atılmaz; dizin
-     alınamadıysa eski kör yoklamaya dönülür. */
-  const coz = () => {
-    if (dizin && !dizin.has(app.id)) { known.set(app.id, 'glyph'); return; }
-    tryNext(0);
-  };
-  if (dizin === null) dizinHazir.then(coz); else coz();
+  /* Simge derleme zamanında biliniyor: yoklama, bekleme ve boş kare yok. */
+  const url = app.id ? iconUrl(app.id, { koyu: settings.isDark }) : null;
+  if (url) drawPng(url); else drawGlyph();
   return box;
 }
 
@@ -104,5 +97,6 @@ export function appIconHtml(app, size = 32) {
     (hasIcon(g) ? icon(g, Math.round(size * 0.52)) : g) + '</div>';
 }
 
-/** Forget the probe cache — used after the user drops new PNGs in. */
-export function resetIconCache() { known.clear(); }
+/* Eski yoklama önbelleğini temizleyen işlev artık gereksiz: yoklama yok.
+   Dışarıdan çağıran kalmadığı doğrulandı; adı tutulmuyor ki çağıran biri
+   sessizce hiçbir şey yapmasın. */

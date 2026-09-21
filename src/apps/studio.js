@@ -5,6 +5,7 @@
    ========================================================================== */
 
 import { h, clear, add, on, debounce, escapeHtml, clamp } from '../core/util.js';
+import KILAVUZ_METNI from '../../docs/OPENSHARP.md?raw';
 import { icon, hasIcon } from '../core/icons.js';
 import { menu, contextMenu } from '../ui/menu.js';
 import vfs, { VFS } from '../core/vfs.js';
@@ -1431,10 +1432,8 @@ class Studio {
     const yol = '/Applications/docs/OPENSHARP.md';
     if (!vfs.exists(yol)) {
       try {
-        const r = await fetch('docs/OPENSHARP.md', { cache: 'no-store' });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
         vfs.mkdir('/Applications/docs');
-        vfs.write(yol, await r.text());
+        vfs.write(yol, KILAVUZ_METNI);
       } catch (e) {
         notify.toast('Kılavuz bulunamadı: ' + e.message, { glyph: '⚠️' });
         return;
