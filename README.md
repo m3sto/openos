@@ -13,10 +13,16 @@ Sanal dosya sistemi · 17 uygulama · **OpenSharp** dili · Yapay zekâ ajanlar�
 
 ## Çalıştırma
 
-ES modülleri kullanıldığı için `file://` üzerinden değil, bir HTTP sunucusundan açılmalıdır:
+Proje Vite ile derleniyor. İlk kez çalıştırıyorsanız bağımlılıkları kurun:
 
 ```bash
-./serve.sh
+npm install
+```
+
+Geliştirme sunucusu (kaynak değişince sayfa kendini günceller):
+
+```bash
+npm run dev
 ```
 
 | Adres | Ne var |
@@ -24,12 +30,25 @@ ES modülleri kullanıldığı için `file://` üzerinden değil, bir HTTP sunuc
 | `http://localhost:8080/` | tanıtım sitesi (GitHub Pages'te de bu görünür) |
 | `http://localhost:8080/os/` | **işletim sisteminin kendisi** |
 
-Başka bir port için: `./serve.sh 3000`. Sunucu önbelleği kapatır, böylece kaynak
-düzenlendiğinde basit bir yenileme yeni kodu yükler.
+Yayın derlemesi ve onun önizlemesi:
 
-İlk açılışta Linux tarzı bir çekirdek günlüğü akar, sonra iOS tarzı kurulum
-sihirbazı gelir (dil, bölge, görünüm, vurgu rengi, duvar kâğıdı, hesap, ajan izinleri).
-Tüm durum tarayıcının `localStorage` alanında tutulur; sunucu tarafı yoktur.
+```bash
+npm run build
+npm run preview
+```
+
+Kaynak dosyalar artık tarayıcıya doğrudan servis edilemiyor: içlerinde Vite
+sözdizimi var (`import.meta.glob`, `?raw`). Bu yüzden eski `./serve.sh` yalnızca
+`dist/` derlenmiş çıktısını sunmak için işe yarar, kaynak ağacını değil.
+
+Yayın **GitHub Actions** üzerinden (`.github/workflows/pages.yml`): depo
+ayarlarında *Settings › Pages › Source* seçeneği **GitHub Actions** olmalı.
+
+İlk açılışta önce **makine ayarları** ekranı gelir: diski nerede tutacağınızı
+seçersiniz (bir klasörde şifreli disk dosyası, ya da geçici olarak tarayıcı
+deposu). Ardından Linux tarzı bir çekirdek günlüğü akar ve iOS tarzı kurulum
+sihirbazı gelir (dil, bölge, görünüm, vurgu rengi, duvar kâğıdı, hesap, ajan
+izinleri).
 
 ---
 

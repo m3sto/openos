@@ -47,7 +47,8 @@ view {
       Segmented(sekme, options: [
         { value: "girdi", label: "Girdi" },
         { value: "veri", label: "Veri" },
-        { value: "geri", label: "Geri bildirim" }
+        { value: "geri", label: "Geri bildirim" },
+        { value: "uc", label: "3B" }
       ], bind: "sekme")
       Spacer()
       Chip("son: ${sonIslem}")
@@ -108,6 +109,18 @@ view {
               Text("Katlanan bölümün içi. Açıkken çocukları çizilir, kapalıyken hiç oluşturulmaz.")
               Link("OpenSharp kılavuzu", url: "openos://help")
             }
+          }
+        }
+
+        if sekme == "uc" {
+          Section("3B sahne") {
+            Text("Scene3D bildirimsel: Three.js API'si dile açılmıyor, nesne listesi veriliyor. Motor yalnızca bu öğe çizilince yükleniyor.")
+            Scene3D(height: 300, arkaplan: "#070a16", donsun: true, nesneler: [
+              { tur: "ikosahedron", yaricap: 1.1, renk: "#0a84ff", konum: [0, 0, 0], donme: [0.004, 0.007, 0], duzGolge: true },
+              { tur: "simit", yaricap: 0.75, kalinlik: 0.24, renk: "#bf5af2", konum: [2.6, 0.4, -1], donme: [0.01, 0.006, 0] },
+              { tur: "kure", yaricap: 0.7, renk: "#30d158", konum: [-2.6, -0.3, -0.5] },
+              { tur: "kup", boyut: 0.9, renk: "#ff9f0a", konum: [0, -1.6, 1.2], donme: [0, 0.012, 0.008] }
+            ])
           }
         }
 

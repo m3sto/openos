@@ -635,6 +635,131 @@ export const COMPONENTS = {
     return applyCommon(n, p);
   },
 
+  /**
+   * Scene3D — OpenSharp uygulamaları için 3B sahne.
+   *
+   * Three.js'in API'si dile açılmıyor; açılsaydı OpenSharp yazan birinin
+   * geometri, malzeme, ışık ve kamera kavramlarını öğrenmesi gerekirdi ve
+   * dilin bütün amacı basitlik. Onun yerine bildirimsel bir nesne listesi
+   * alıyor — dilin geri kalanına benziyor:
+   *
+   *   Scene3D(height: 280, arkaplan: "#05060f", donsun: true, nesneler: [
+   *     { tur: "kup",    boyut: 1.2, renk: "#0a84ff", konum: [0, 0, 0] },
+   *     { tur: "kure",   yaricap: 0.8, renk: "#bf5af2", konum: [2, 0, -1] },
+   *     { tur: "simit",  renk: "#30d158", konum: [-2, 0.5, 0], donme: [0.01, 0.02, 0] }
+   *   ])
+   *
+   * Motor tembel yükleniyor: 3B kullanmayan bir uygulama Three.js'i hiç
+   * indirmiyor.
+   */
+  Scene3D: (el, api) => {
+    const p = el.props;
+    const yukseklik = px(p.height ?? 280);
+    const tuval = h('canvas', { style: { width: '100%', height: yukseklik, display: 'block',
+                                         borderRadius: '10px' } });
+    const nesneler = p.nesneler || p.objects || el.args[0] || [];
+
+    let denetim = null, raf = 0, yokEdildi = false;
+
+    const baslat = async () => {
+      let T;
+      try { T = await import('three'); }
+      catch (e) { console.warn('[osh] 3B motoru yüklenemedi', e); return; }
+      if (yokEdildi || !tuval.isConnected) return;
+
+      const renderer = new T.WebGLRenderer({ canvas: tuval, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      const sahne = new T.Scene();
+      sahne.background = new T.Color(str(p.arkaplan ?? p.background ?? '#0b0e17'));
+      const kamera = new T.PerspectiveCamera(50, 1, 0.1, 200);
+      kamera.position.set(0, 1.4, 6);
+      kamera.lookAt(0, 0, 0);
+
+      sahne.add(new T.AmbientLight(0xffffff, 1.1));
+      const l = new T.DirectionalLight(0xffffff, 2.2);
+      l.position.set(3, 5, 4);
+      sahne.add(l);
+
+      const geometri = (o) => {
+        const tur = str(o.tur ?? o.type ?? 'kup').toLowerCase();
+        if (tur === 'kure' || tur === 'sphere')   return new T.SphereGeometry(num(o.yaricap ?? o.radius ?? 0.8), 32, 24);
+        if (tur === 'simit' || tur === 'torus')   return new T.TorusGeometry(num(o.yaricap ?? 0.7), num(o.kalinlik ?? 0.26), 20, 48);
+        if (tur === 'silindir' || tur === 'cylinder') return new T.CylinderGeometry(num(o.yaricap ?? 0.6), num(o.yaricap ?? 0.6), num(o.boy ?? 1.4), 32);
+        if (tur === 'koni' || tur === 'cone')     return new T.ConeGeometry(num(o.yaricap ?? 0.7), num(o.boy ?? 1.4), 32);
+        if (tur === 'düzlem' || tur === 'duzlem' || tur === 'plane') return new T.PlaneGeometry(num(o.en ?? 2), num(o.boy ?? 2));
+        if (tur === 'ikosahedron' || tur === 'icosahedron') return new T.IcosahedronGeometry(num(o.yaricap ?? 0.8), num(o.detay ?? 0));
+        const b = num(o.boyut ?? o.size ?? 1);
+        return new T.BoxGeometry(b, b, b);
+      };
+
+      const hareketliler = [];
+      for (const o of nesneler) {
+        const m = new T.MeshStandardMaterial({
+          color: new T.Color(str(o.renk ?? o.color ?? '#0a84ff')),
+          metalness: num(o.metal ?? 0.15),
+          roughness: num(o.puruz ?? 0.42),
+          flatShading: !!truthy(o.duzGolge ?? o.flat),
+        });
+        const mesh = new T.Mesh(geometri(o), m);
+        const k = o.konum || o.position || [0, 0, 0];
+        mesh.position.set(num(k[0] ?? 0), num(k[1] ?? 0), num(k[2] ?? 0));
+        const d = o.donme || o.spin;
+        if (d) mesh.userData.donme = [num(d[0] ?? 0), num(d[1] ?? 0), num(d[2] ?? 0)];
+        sahne.add(mesh);
+        if (mesh.userData.donme) hareketliler.push(mesh);
+      }
+
+      const kendiDonsun = truthy(p.donsun ?? p.autoRotate);
+
+      const boyutla = () => {
+        const w = tuval.clientWidth || 1, hh = tuval.clientHeight || 1;
+        renderer.setSize(w, hh, false);
+        kamera.aspect = w / hh;
+        kamera.updateProjectionMatrix();
+      };
+      boyutla();
+      const go = new ResizeObserver(boyutla);
+      go.observe(tuval);
+
+      const ciz = (ts) => {
+        if (yokEdildi || !tuval.isConnected) { temizle(); return; }
+        raf = requestAnimationFrame(ciz);
+        for (const m of hareketliler) {
+          m.rotation.x += m.userData.donme[0];
+          m.rotation.y += m.userData.donme[1];
+          m.rotation.z += m.userData.donme[2];
+        }
+        if (kendiDonsun) {
+          kamera.position.x = Math.sin(ts * 0.00022) * 6;
+          kamera.position.z = Math.cos(ts * 0.00022) * 6;
+          kamera.lookAt(0, 0, 0);
+        }
+        renderer.render(sahne, kamera);
+      };
+
+      /* GPU bağlamı sınırlı: sahne DOM'dan çıkınca kaynaklar bırakılmalı,
+         yoksa birkaç yeniden çizimde "context lost" alınıyor. */
+      const temizle = () => {
+        cancelAnimationFrame(raf);
+        go.disconnect();
+        sahne.traverse(o => {
+          o.geometry?.dispose?.();
+          if (Array.isArray(o.material)) o.material.forEach(x => x.dispose?.());
+          else o.material?.dispose?.();
+        });
+        renderer.dispose();
+        renderer.forceContextLoss?.();
+        denetim = null;
+      };
+      denetim = { temizle };
+      raf = requestAnimationFrame(ciz);
+    };
+
+    baslat();
+    void api;
+    return applyCommon(tuval, p);
+  },
+
   WebView: (el) => {
     const n = h('iframe', {
       src: str(el.args[0] ?? el.props.src ?? 'about:blank'),

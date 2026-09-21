@@ -13,6 +13,7 @@ import registry from '../core/registry.js';
 import vfs, { VFS } from '../core/vfs.js';
 import notify from '../core/notify.js';
 import { render as paintWallpaper, byId as wallpaperById, WALLPAPERS, thumb } from '../wallpapers/generator.js';
+import { webglVarMi } from '../wallpapers/three.js';
 
 const FILE_GLYPHS = {
   dir: '📁', osh: '💠', txt: '📄', md: '📝', json: '🧾', js: '📜',
@@ -69,6 +70,7 @@ export class Desktop {
   /* ================= wallpaper ================= */
   startWallpaper() {
     cancelAnimationFrame(this._wallRaf);
+    this.webgliBirak();
     const id = settings.get('wallpaper');
     const wp = wallpaperById(id);
     this.wallLayer.classList.toggle('tinted', true);
@@ -81,6 +83,11 @@ export class Desktop {
 
     const animated = wp.animated && settings.get('wallpaperMotion')
       && !settings.get('system.reduceMotion') && (settings.get('graphics.wallpaperFps') ?? 15) > 0;
+
+    /* WebGL duvar kâğıdı kendi döngüsünü sürüyor: 2D yolundan geçerse
+       canvas'ın bağlamı 2D'ye kilitlenir ve WebGL bir daha alınamaz. */
+    if (wp.webgl && animated && webglVarMi()) { this.webglDuvarKagidi(wp); return; }
+
     if (!animated) { paintWallpaper(this.wallCanvas, id, 0); return; }
 
     let t = 0, last = 0;
@@ -94,6 +101,69 @@ export class Desktop {
       paintWallpaper(this.wallCanvas, id, t);
     };
     this._wallRaf = requestAnimationFrame(loop);
+  }
+
+  /**
+   * WebGL duvar kâğıdı. Motor tembel yükleniyor, bu yüzden kurulum
+   * eşzamansız; kullanıcı bu arada duvar kâğıdını değiştirmiş olabilir ve
+   * o durumda kurulan sahne hemen atılıyor — yoksa iki sahne aynı canvas'a
+   * çizmeye çalışır.
+   */
+  async webglDuvarKagidi(wp) {
+    this.webgliBirak();
+    const istek = ++this._webglNesil;
+
+    /* 2D bağlamı bir kez alınmış bir canvas'tan WebGL alınamıyor. Duvar
+       kâğıdı 2D'den 3B'ye geçerken canvas yenilenmek zorunda. */
+    const yeni = h('canvas');
+    yeni.style.width = this.el.clientWidth + 'px';
+    yeni.style.height = this.el.clientHeight + 'px';
+    this.wallCanvas.replaceWith(yeni);
+    this.wallCanvas = yeni;
+
+    let denetim;
+    try {
+      denetim = await wp.kur(yeni);
+    } catch (e) {
+      console.warn('[duvar] WebGL sahnesi kurulamadı, 2D karşılığına dönülüyor', e);
+      if (istek === this._webglNesil) paintWallpaper(this.wallCanvas, wp.id, 0);
+      return;
+    }
+    if (istek !== this._webglNesil) { denetim.yok(); return; }
+
+    this._webgl = denetim;
+    const boyutla = () => {
+      const w = this.el.clientWidth, hh = this.el.clientHeight;
+      yeni.style.width = w + 'px';
+      yeni.style.height = hh + 'px';
+      denetim.boyut(w, hh);
+    };
+    boyutla();
+    this._webglResize = on(window, 'resize', throttle(boyutla, 160));
+
+    let son = 0;
+    const dongu = (ts) => {
+      this._wallRaf = requestAnimationFrame(dongu);
+      /* Kare hızı sınırı Grafik İşletici'den geliyor; 3B için tavan daha
+         yüksek çünkü iş GPU'da ve CPU'yu meşgul etmiyor. */
+      const fps = settings.get('graphics.wallpaperFps') ?? 15;
+      if (fps <= 0) return;
+      const tavan = Math.max(fps, 30);
+      if (ts - son < 1000 / tavan) return;
+      son = ts;
+      denetim.ciz(ts);
+    };
+    this._wallRaf = requestAnimationFrame(dongu);
+  }
+
+  /** WebGL sahnesini ve kaynaklarını bırakır. */
+  webgliBirak() {
+    cancelAnimationFrame(this._wallRaf);
+    this._webglResize?.();
+    this._webglResize = null;
+    this._webgl?.yok();
+    this._webgl = null;
+    this._webglNesil = (this._webglNesil || 0) + 1;
   }
 
   /* ================= desktop icons ================= */
