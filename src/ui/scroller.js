@@ -25,6 +25,36 @@ function scrollable(el, axis) {
   return ov === 'auto' || ov === 'scroll' || ov === 'overlay';
 }
 
+/**
+ * Öğenin CSS'te *bildirdiği* genişlik. `getComputedStyle` işe yaramıyor:
+ * yerleşim yapılmış bir öğe için genişliği daima piksel olarak, yani
+ * kullanılan değer olarak döndürüyor — `100%` ile `420px` arasındaki fark
+ * tam da orada kayboluyor.
+ *
+ * Bu fark burada belirleyici: genişliğini yüzdeyle bildiren bir öğe
+ * (Launchpad ızgarası: `width: 100%`) kabuğun da tam genişlik almasını
+ * gerektirir, yoksa yüzde daralmış kabuğa göre çözülür ve ızgara tek sütuna
+ * iner. Kendi genişliğini bildiren bir öğe (kip pencere kartı:
+ * `width: min(420px, …)`) ise daraltılmamalı, olduğu gibi bırakılmalı.
+ *
+ * Sınırı var: eşleşen kuralların özgüllüğü hesaplanmıyor, son eşleşen kural
+ * kazanıyor. Bu iş için yeterli — aranan şey bir sayı değil, genişliğin
+ * kapsayıcıya bağlı olup olmadığı.
+ */
+function bildirilenGenislik(el) {
+  if (el.style && el.style.width) return el.style.width;
+  let bulunan = '';
+  for (const ss of document.styleSheets) {
+    let kurallar;
+    try { kurallar = ss.cssRules; } catch { continue; }   /* çapraz kaynak stil sayfası */
+    for (const k of kurallar) {
+      if (!k.selectorText || !k.style || !k.style.width) continue;
+      try { if (el.matches(k.selectorText)) bulunan = k.style.width; } catch { /* geçersiz seçici */ }
+    }
+  }
+  return bulunan;
+}
+
 class Scroller {
   constructor(el) {
     this.el = el;
@@ -87,8 +117,44 @@ class Scroller {
       const sutunAkis = ustCs && /flex|grid/.test(ustCs.display) &&
                         (ustCs.display.includes('grid') || (ustCs.flexDirection || 'row').startsWith('column'));
       if (sutunAkis) {
-        host.style.width = '100%';
-        host.style.alignSelf = 'stretch';
+        /* Kapsayıcı çocuklarını gerçekten geriyor mu? Önceki sürüm bunu
+           sormadan `stretch` yazıyordu ve `place-items: center` ile ortalanan
+           bir ızgaranın hizalamasını eziyordu — kip pencere kartı pencere
+           boyunca uzuyordu. Esnek sütunda yatay ekseni `align-items` belirler;
+           ızgarada yatayı `justify-items`, dikeyi `align-items`. İkisini aynı
+           saymak, kuralın ızgarada yanlış eksene basması demekti. */
+        const izgara = ustCs.display.includes('grid');
+        const gerilir = v => !v || v === 'normal' || v === 'stretch' || v === 'legacy';
+        const yatay = izgara ? ustCs.justifyItems : ustCs.alignItems;
+        const dikey = izgara ? ustCs.alignItems : null;
+
+        /* Ebeveyn çocuklarını ortalıyorsa genişlik kararını çocuğun kendi
+           cinsi veriyor. Ayrım şu: bir ızgara ya da esnek *kapsayıcı*, iç
+           yerleşimini hesaplamak için kullanılabilir genişliğe ihtiyaç duyar
+           — Launchpad'in `repeat(auto-fill, …)` ızgarası daraltılınca tek
+           sütuna iniyor. Kendi genişliğini bildiren düz bir blok ise (kip
+           pencere kartı gibi) daraltılmamalı, içeriğine göre kalmalı.
+           Bu bir sezgi ve sınırı var: kendi genişliği olan bir ızgara yine
+           de gerilir. Ölçüm mümkün olduğunda `_kutuyuKoru()` düzeltiyor. */
+        /* Ebeveyn gerçekten geriyorsa karar burada verilebilir. Ortalıyorsa
+           veremez: çocuğun genişliğe ihtiyacı olup olmadığını anlamak için
+           onu ölçmek gerekiyor ve bu anda ölçülemeyebilir — Launchpad
+           `display:none` iken sarmalanıyor, o sırada `display` bile "none"
+           okunuyor. O karar `_kutuyuKoru()`'ya bırakıldı. */
+        /* Çocuk genişliğini yüzdeyle bildiriyorsa kabuk onu geçirmek
+           zorunda: yüzde artık kabuğa göre çözülüyor. */
+        const yuzdeGenislik = /%\s*$/.test(bildirilenGenislik(el));
+        const yatayGer = gerilir(yatay) || yuzdeGenislik;
+
+        if (yatayGer) host.style.width = '100%';
+        if (izgara) {
+          host.style.justifySelf = yatayGer ? 'stretch' : yatay;
+          host.style.alignSelf   = gerilir(dikey) ? 'stretch' : dikey;
+        } else {
+          host.style.alignSelf = yatayGer ? 'stretch' : yatay;
+        }
+        /* Çocuğun kendi hizalaması varsa kabuğa taşınır ki ortalanmış dar bir
+           öğe ortalanmış kalsın. */
         if (cs.alignSelf && cs.alignSelf !== 'auto' && cs.alignSelf !== 'stretch') {
           host.style.alignItems = cs.alignSelf;
         }
@@ -134,19 +200,47 @@ class Scroller {
    * yeniden denenir — sıfır bir ölçü değil, ölçememenin işaretidir.
    */
   _kutuyuKoru() {
-    if (this._kutuKorundu || !this._oncekiKutu) return;
-    const once = this._oncekiKutu;
-    const simdi = this.el.getBoundingClientRect();
-    /* Hiçbir şey ölçülemiyorsa karar verme; bir dahaki sefere. */
-    if (!once.width && !once.height) { this._oncekiKutu = simdi.width || simdi.height ? simdi : once; return; }
+    if (this._kutuKorundu) return;
+    const el = this.el, host = this.host;
+    const simdi = el.getBoundingClientRect();
+    /* Sıfır bir ölçü değil, ölçememenin işareti: karar verme, ResizeObserver
+       tekrar çağıracak. */
     if (!simdi.width && !simdi.height) return;
 
-    if (once.width - simdi.width > 1) {
-      this.host.style.alignSelf = 'stretch';
-      this.host.style.width = '100%';
+    const once = this._oncekiKutu;
+
+    /* En güvenilir kanıt: sarmalamadan önceki kutu ölçülebilmişse ve öğe
+       sarmalandıktan sonra daraldıysa, kabuk genişliği geri vermeli. */
+    if (once && once.width && once.width - simdi.width > 1) {
+      host.style.alignSelf = 'stretch';
+      host.style.width = '100%';
+      this._kutuKorundu = true;
+      return;
     }
-    if (once.height - simdi.height > 1 && getComputedStyle(this.host).position !== 'absolute') {
-      this.host.style.height = '100%';
+    if (once && once.height && once.height - simdi.height > 1 &&
+        getComputedStyle(host).position !== 'absolute') {
+      host.style.height = '100%';
+    }
+
+    /* Önceki kutu hiç ölçülememişse (gizli sekmede ya da `display:none`
+       iken sarmalandıysa) karşılaştıracak bir "önce" yok. Karar şimdi,
+       her şeyin okunabildiği anda veriliyor: iç yerleşimini hesaplamak için
+       kullanılabilir genişliğe ihtiyaç duyan bir kapsayıcı — ızgara ya da
+       esnek kutu — ebeveyninden belirgin biçimde darsa gerilmelidir.
+       Kendi genişliğini bildiren düz bir blok (kip pencere kartı) böyle
+       değil: daraltılmamalı, içeriğine göre kalmalı. */
+    if ((!once || !once.width) && host.parentElement) {
+      const cs = getComputedStyle(el);
+      if (/grid|flex/.test(cs.display)) {
+        const ust = host.parentElement;
+        const ucs = getComputedStyle(ust);
+        const ustIc = ust.getBoundingClientRect().width
+          - (parseFloat(ucs.paddingLeft) || 0) - (parseFloat(ucs.paddingRight) || 0);
+        if (ustIc - simdi.width > 2) {
+          host.style.width = '100%';
+          host.style.alignSelf = 'stretch';
+        }
+      }
     }
     this._kutuKorundu = true;
   }

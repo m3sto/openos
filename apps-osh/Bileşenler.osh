@@ -1,0 +1,152 @@
+app {
+  name: "Bileşenler"
+  id: "bilesenler"
+  version: "1.0.0"
+  icon: "layers"
+  tint: ["#5ac8fa", "#0a6ede"]
+  width: 760
+  height: 620
+  author: "m3sto"
+  about: "OpenSharp arayüz öğelerinin canlı kataloğu — her denetimin nasıl yazıldığı ve nasıl göründüğü."
+}
+
+# Sistemin sunduğu her denetimi tek yerde gösteren canlı katalog.
+# Yeni bir öğe eklendiğinde buraya da bir örnek girer: gösterilmeyen öğe
+# kimsenin bilmediği öğedir.
+
+state sekme = "girdi"
+state metin = "OpenSharp"
+state uzunMetin = "Çok satırlı alan.\nİkinci satır."
+state acik = true
+state onay = false
+state sayi = 3
+state renk = "#0a84ff"
+state tarih = ""
+state arama = ""
+state secim = "orta"
+state radyo = "b"
+state katli = false
+state kipAcik = false
+state sonIslem = "—"
+
+let SATIRLAR = [
+  { ad: "Çekirdek", durum: "çalışıyor", bellek: "12 MB" },
+  { ad: "Pencere yöneticisi", durum: "çalışıyor", bellek: "8 MB" },
+  { ad: "Alarm servisi", durum: "çalışıyor", bellek: "1 MB" },
+  { ad: "Dosya sistemi", durum: "bağlı", bellek: "34 MB" }
+]
+
+fn bildir(ne) {
+  sonIslem = ne
+  toast(ne)
+}
+
+view {
+  VStack(spacing: 0, grow: true) {
+    Toolbar {
+      Segmented(sekme, options: [
+        { value: "girdi", label: "Girdi" },
+        { value: "veri", label: "Veri" },
+        { value: "geri", label: "Geri bildirim" }
+      ], bind: "sekme")
+      Spacer()
+      Chip("son: ${sonIslem}")
+    }
+
+    ScrollView(grow: true) {
+      VStack(spacing: 16, padding: 18) {
+
+        if sekme == "girdi" {
+          Section("Metin") {
+            TextField(metin, bind: "metin", placeholder: "Tek satır")
+            SearchField(arama, bind: "arama", placeholder: "Ara")
+            TextArea(uzunMetin, bind: "uzunMetin", height: 74)
+          }
+
+          Section("Seçim") {
+            HStack(spacing: 10, align: "center") {
+              Toggle(acik, bind: "acik")
+              Label("Toggle")
+              Spacer()
+              Checkbox("Checkbox", value: onay, bind: "onay")
+            }
+            Select(secim, options: ["dar", "orta", "geniş"], bind: "secim")
+            RadioGroup(options: [
+              { value: "a", label: "Birinci seçenek" },
+              { value: "b", label: "İkinci seçenek" },
+              { value: "c", label: "Üçüncü seçenek" }
+            ], value: radyo, bind: "radyo")
+          }
+
+          Section("Sayı, tarih, renk") {
+            HStack(spacing: 12, align: "center") {
+              Stepper(sayi, bind: "sayi", min: 0, max: 10)
+              Label("adet: ${sayi}")
+              Spacer()
+              ColorPicker(renk, bind: "renk")
+              DatePicker(tarih, bind: "tarih")
+            }
+            Slider(sayi, min: 0, max: 10, bind: "sayi")
+          }
+        }
+
+        if sekme == "veri" {
+          Section("Tablo") {
+            Table(
+              columns: [
+                { key: "ad", label: "Bileşen", width: 220 },
+                { key: "durum", label: "Durum" },
+                { key: "bellek", label: "Bellek", width: 90 }
+              ],
+              rows: SATIRLAR,
+              onSelect: fn(satir) => bildir("seçildi: ${satir.ad}")
+            )
+          }
+
+          Section("Katlanabilir") {
+            Disclosure("Ayrıntılar", open: katli, bind: "katli") {
+              Text("Katlanan bölümün içi. Açıkken çocukları çizilir, kapalıyken hiç oluşturulmaz.")
+              Link("OpenSharp kılavuzu", url: "openos://help")
+            }
+          }
+        }
+
+        if sekme == "geri" {
+          Section("Uyarı kutuları") {
+            Alert("Sistem normal çalışıyor.", kind: "success", title: "Tamam")
+            Alert("Disk %80 dolu.", kind: "warning")
+            Alert("Bağlantı kurulamadı.", kind: "error")
+            Alert("Bu bir bilgi notu.")
+          }
+
+          Section("Eylemler") {
+            HStack(spacing: 8) {
+              Button("Kip pencere aç", variant: "primary", onClick: fn() { kipAcik = true })
+              Menu("Menü", glyph: "more", items: [
+                { label: "Yenile", glyph: "refresh", run: fn() => bildir("yenilendi") },
+                { label: "Dışa aktar", glyph: "download", run: fn() => bildir("dışa aktarıldı") },
+                "-",
+                { label: "Sil", glyph: "trash", run: fn() => bildir("silindi") }
+              ])
+              Spacer()
+              Spinner()
+            }
+            Progress(sayi / 10)
+          }
+        }
+      }
+    }
+
+    Dialog(open: kipAcik, title: "Kip pencere", onClose: fn() { kipAcik = false }) {
+      Text("Perdeye tıklamak ya da düğme kapatır. Kapatma kararı uygulamanın — kaydedilmemiş bir iş olabilir.")
+      HStack(spacing: 8) {
+        Spacer()
+        Button("Kapat", onClick: fn() { kipAcik = false })
+        Button("Onayla", variant: "primary", onClick: fn() {
+          kipAcik = false
+          bildir("onaylandı")
+        })
+      }
+    }
+  }
+}
