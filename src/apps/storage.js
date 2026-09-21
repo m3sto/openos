@@ -62,6 +62,25 @@ class Storage {
    * veritabanının bozulması ve bunun çözümü farklı. Durum kasadan
    * okunuyor ve onarılabilir olan hâller için düğme gösteriliyor.
    */
+  /**
+   * Diskin nerede durduğu. Kullanıcı "verilerim tarayıcıda mı, klasörümde mi"
+   * sorusunun cevabını görebilmeli — bu, sistemin en temel sözlerinden biri
+   * ve tahmine bırakılamaz.
+   */
+  konumSatiri() {
+    const k = vfs.konum;
+    const klasorde = k.tur === 'klasor';
+    return h('div.k-row',
+      h('span.ic', { html: icon('hardDrive', 15),
+        style: { color: klasorde ? 'var(--green, #30d158)' : 'var(--orange, #ff9f0a)' } }),
+      h('div', { style: { flex: 1 } },
+        h('div.k-text', { text: klasorde ? `Disk: ${k.ad}` : 'Disk: tarayıcı deposu' }),
+        h('div.k-text.t-caption', {
+          text: klasorde
+            ? 'Seçtiğiniz klasörde `openos.disk` olarak duruyor. Tarayıcı verilerini temizlemek onu silmez.'
+            : 'Tarayıcının deposunda. Site verileri temizlenirse silinir ve birkaç megabaytla sınırlıdır — kalıcı bir disk için sistemi yeniden başlatıp makine ekranından klasör seçin.' })));
+  }
+
   guvenlikSatiri() {
     const d = vault.durum;
     const sifreli = vfs.sifreli && d.ok;
@@ -255,7 +274,7 @@ class Storage {
             h('div.k-text.t-caption', { text: 'Birleştir: yedektekiler eklenir. Değiştir: disk tamamen yedeğe döner.' })),
           h('button.k-btn.s-sm', { text: 'Dosya Seç…', onclick: () => this.yedektenYukle() }))),
       h('div.k-sectitle', { text: 'Güvenlik' }),
-      h('div.k-group', this.guvenlikSatiri()),
+      h('div.k-group', this.konumSatiri(), this.guvenlikSatiri()),
       h('div.k-sectitle', { text: 'Yeri kaplayanlar' }),
     );
 

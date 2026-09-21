@@ -22,6 +22,7 @@ import permissions from './permissions.js';
 import { toggleShortcuts, closeShortcuts } from '../ui/shortcuts.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
+import { makineEkrani } from '../boot/machine.js';
 import services from './services.js';
 import sesler from './sounds.js';
 import { alarmServisiniKur } from '../services/alarms.js';
@@ -60,6 +61,16 @@ export class Kernel {
   async start(stage) {
     this.stage = stage;
     settings.load();
+
+    /* Sistem doğrudan açılmıyor: önce hangi diskle açılacağı soruluyor.
+       Klasör izni kullanıcı hareketi gerektiriyor ve o hareketin yeri burası —
+       açılış görüntüsü başladıktan sonra izin istemek mümkün değil. */
+    const { depo } = await makineEkrani(stage);
+    if (depo) {
+      vfs.bagla(depo);
+      this.disk = depo;
+    }
+
     /* Disk şifreli; açılması anahtarın çözülmesini bekler. */
     const hadFs = await vfs.load();
     settings.apply();

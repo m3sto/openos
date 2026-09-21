@@ -1,0 +1,115 @@
+/* ==========================================================================
+   OpenOS · machine.css — açılış öncesi makine ekranı
+
+   Boot görüntüsünden önce gelen tek ekran. Karakteri kasıtlı olarak
+   masaüstünden farklı: bu henüz sistem değil, sistemin *hangi diskle*
+   açılacağına karar verilen yer. Koyu, sakin, tek kart.
+   ========================================================================== */
+
+.mk {
+  position: absolute; inset: 0; z-index: 900;
+  display: grid; place-items: center;
+  background: radial-gradient(1200px 700px at 50% 0%, #16181f, #08090c 70%);
+  color: #e8eaf0;
+  font-family: var(--sans);
+  animation: mk-in .4s var(--ease-out) both;
+}
+.mk.cikiyor { animation: mk-out .26s var(--ease-in) forwards; }
+@keyframes mk-in  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes mk-out { to { opacity: 0 } }
+
+.mk-card {
+  width: min(460px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px); overflow: auto;
+  background: rgba(255, 255, 255, .045);
+  border: .5px solid rgba(255, 255, 255, .11);
+  border-radius: 20px; padding: 24px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+  backdrop-filter: blur(30px);
+}
+
+.mk-head { display: flex; align-items: center; gap: 13px; margin-bottom: 20px; }
+.mk-mark {
+  width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center;
+  background: linear-gradient(150deg, #64d2ff, #0a6ede); color: #fff;
+  box-shadow: 0 8px 22px rgba(10, 132, 255, .34);
+}
+.mk-title { font-size: 19px; font-weight: 680; letter-spacing: -.01em; }
+.mk-sub   { font-size: 12.5px; color: #9aa0ad; margin-top: 1px; }
+
+.mk-adim { font-size: 14px; font-weight: 620; margin-bottom: 8px; }
+.mk-not  { font-size: 12px; line-height: 1.55; color: #9aa0ad; margin-bottom: 14px; }
+.mk-not.kucuk { font-size: 11.5px; color: #7d8390; margin: -4px 0 12px; }
+
+/* ---- kayıtlı makineler ---- */
+.mk-liste { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.mk-makine-satir { display: flex; align-items: center; gap: 6px; }
+.mk-makine {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 11px; padding: 11px 12px;
+  border-radius: 12px; text-align: left; color: inherit;
+  background: rgba(255, 255, 255, .05);
+  border: .5px solid rgba(255, 255, 255, .08);
+  transition: background .14s var(--ease), border-color .14s var(--ease);
+}
+.mk-makine:hover { background: rgba(255, 255, 255, .09); border-color: rgba(255, 255, 255, .16); }
+.mk-disk { color: #64d2ff; flex: 0 0 auto; display: grid; place-items: center; }
+.mk-bilgi { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mk-ad   { font-size: 13.5px; font-weight: 570; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-meta { font-size: 11px; color: #858b98; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-git  { color: #5f6675; flex: 0 0 auto; }
+.mk-sil {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+  color: #7d8390; transition: background .14s var(--ease), color .14s var(--ease);
+}
+.mk-sil:hover { background: rgba(255, 90, 80, .16); color: #ff6a5e; }
+
+.mk-ayrac {
+  text-align: center; font-size: 11px; color: #6b7280; margin: 4px 0 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+.mk-ayrac::before, .mk-ayrac::after {
+  content: ""; flex: 1; height: .5px; background: rgba(255, 255, 255, .12);
+}
+
+/* ---- alanlar ---- */
+.mk-alan { display: flex; flex-direction: column; gap: 5px; margin-bottom: 11px; }
+.mk-alan > span { font-size: 11.5px; color: #9aa0ad; font-weight: 520; }
+.mk-alan input {
+  width: 100%; padding: 9px 11px; border-radius: 10px;
+  background: rgba(0, 0, 0, .3); color: #e8eaf0;
+  border: .5px solid rgba(255, 255, 255, .13);
+  font-size: 13px; font-family: inherit;
+  transition: border-color .14s var(--ease), box-shadow .14s var(--ease);
+}
+.mk-alan input:focus {
+  outline: none; border-color: #0a84ff;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, .22);
+}
+.mk-onay { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #c3c8d2; margin-bottom: 14px; }
+.mk-onay input { width: 15px; height: 15px; accent-color: #0a84ff; }
+
+.mk-hata {
+  font-size: 12px; line-height: 1.5; color: #ff8579; margin-bottom: 12px;
+  background: rgba(255, 90, 80, .1); border: .5px solid rgba(255, 90, 80, .25);
+  border-radius: 9px; padding: 9px 11px;
+}
+
+.mk-uyari {
+  display: flex; gap: 11px; align-items: flex-start; margin-bottom: 14px;
+  background: rgba(255, 159, 10, .1); border: .5px solid rgba(255, 159, 10, .26);
+  border-radius: 11px; padding: 12px;
+}
+.mk-uyari > span { color: #ff9f0a; flex: 0 0 auto; }
+.mk-uyari-bas { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.mk-uyari-govde { font-size: 12px; line-height: 1.55; color: #b9bec9; }
+
+/* ---- eylemler ---- */
+.mk-eylem { display: flex; flex-direction: column; gap: 8px; }
+.mk-genis { width: 100%; justify-content: center; height: 38px; font-size: 13px; }
+.mk-gecici {
+  display: block; width: 100%; margin-top: 14px; padding: 6px;
+  font-size: 11.5px; color: #6b7280; text-align: center;
+  transition: color .14s var(--ease);
+}
+.mk-gecici:hover { color: #9aa0ad; text-decoration: underline; }

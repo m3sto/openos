@@ -27,8 +27,39 @@ export class VFS {
      bu yüzden `persist()` çağrıldığı anda dönen, arka planda yazan bir
      işlem. Son yazımı beklemek gerektiğinde `flush()` kullanılır. */
 
+  /**
+   * Diski bir klasör deposuna bağlar (bkz. core/disk.js). Bağlandıktan
+   * sonra tarayıcı deposuna hiç yazılmaz — veri kullanıcının klasöründeki
+   * şifreli disk dosyasında yaşar.
+   */
+  bagla(depo) {
+    this.depo = depo;
+    this.sifreli = true;
+  }
+
+  /** Disk nerede duruyor — durum çubukları ve Depolama uygulaması için. */
+  get konum() {
+    if (this.depo) return { tur: 'klasor', ad: this.depo.ad };
+    return { tur: 'tarayici', ad: 'Tarayıcı deposu' };
+  }
+
   /** @returns {Promise<boolean>} diskte okunabilir bir durum bulundu mu */
   async load() {
+    /* Klasör diski bağlıysa kaynak odur; tarayıcı deposuna bakılmaz. */
+    if (this.depo) {
+      try {
+        const metin = await this.depo.oku();
+        if (metin == null) return false;
+        this.root = JSON.parse(metin);
+        this.sifreli = true;
+        return true;
+      } catch (e) {
+        console.error('[vfs] klasör diski okunamadı', e);
+        this.kasaHatasi = 'cozulemedi';
+        return false;
+      }
+    }
+
     const raw = localStorage.getItem(KEY);
     if (!raw) return false;
 
@@ -74,6 +105,12 @@ export class VFS {
       while (this._bekleyen !== null) {
         const metin = this._bekleyen;
         this._bekleyen = null;
+        if (this.depo) {
+          await this.depo.yaz(metin);
+          this.sifreli = true;
+          this.yazmaHatasi = null;
+          continue;
+        }
         if (await vault.ac()) {
           localStorage.setItem(KEY, await vault.sifrele(metin));
           this.sifreli = true;
