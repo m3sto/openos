@@ -18,7 +18,7 @@ class Notifier {
   post(opts = {}) {
     const n = {
       id: uid('ntf'), time: Date.now(), title: 'OpenOS', body: '', app: 'system',
-      glyph: 'bell', tint: ['#8e8e93', '#5a5a60'], timeout: 5200, ...opts,
+      glyph: 'bell', tint: ['#8e8e93', '#5a5a60'], timeout: 5200, seen: false, ...opts,
     };
     this.history.unshift(n);
     if (this.history.length > 120) this.history.pop();
@@ -55,6 +55,8 @@ class Notifier {
     once(el, 'animationend', () => el.remove());
   }
   clearAll() { if (this.layer) clear(this.layer); }
+  markAllSeen() { this.history.forEach(n => { n.seen = true; }); this.bus.emit('seen'); }
+  clearHistory() { this.history.length = 0; this.bus.emit('seen'); }
 
   /* ---------------- modal dialogs ---------------- */
   _modal(build, root) {
@@ -93,6 +95,26 @@ class Notifier {
       h('div.acts',
         h('button.k-btn.s-lg', { text: cancel, onclick: () => finish(false) }),
         h('button.k-btn.s-lg', { class: danger ? 'v-danger' : 'v-primary', text: ok, onclick: () => finish(true) })),
+    ), root);
+  }
+
+  /**
+   * Üç (ya da daha çok) seçenekli soru. `confirm` iki yola zorluyordu;
+   * "kaydetmeden kapat" ile "hiç kapatma" farklı şeyler ve kullanıcının
+   * ikisini de görebilmesi gerekiyor.
+   * @param {string} message
+   * @param {{title?:string, glyph?:string, root?:Element,
+   *          buttons:{label:string, value:any, variant?:string}[]}} o
+   */
+  choose(message, { title = 'OpenOS', glyph = '❔', buttons = [], root } = {}) {
+    return this._modal(finish => h('div.k-alert',
+      h('div.glyph', { text: glyph }),
+      h('div.k-text.t-title2', { text: title }),
+      message ? h('div.k-text.t-callout', { text: message, style: { marginTop: '5px' } }) : null,
+      h('div.acts', { style: { flexDirection: buttons.length > 2 ? 'column' : 'row' } },
+        ...buttons.map(b => h('button.k-btn.s-lg', {
+          class: b.variant ? 'v-' + b.variant : '', text: b.label, onclick: () => finish(b.value),
+        }))),
     ), root);
   }
 

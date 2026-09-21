@@ -28,6 +28,9 @@ const OPENBROW_UA =
 const UPSTREAM_UA =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+/* Enjekte edilen betiğin sürümü. Değişince istemci eski kopyayı ayırt eder. */
+const SHIM_SURUM = '3';
+
 const STRIP_HEADERS = [
   'content-security-policy', 'content-security-policy-report-only',
   'x-frame-options', 'cross-origin-opener-policy', 'cross-origin-embedder-policy',
@@ -47,12 +50,29 @@ export default {
     const target = here.searchParams.get('url');
     if (!target) return info(here);
 
+    /* İndirme yolu: içerik gövdesi olduğu gibi, indirme başlığıyla geçer. */
+    const indirme = here.pathname.startsWith('/download');
+
     let url;
     try { url = new URL(target); } catch { return new Response('geçersiz adres', { status: 400 }); }
     if (!/^https?:$/.test(url.protocol)) return new Response('yalnızca http/https', { status: 400 });
 
     const forceOpenBrowUA = here.searchParams.get('ua') === 'openbrow';
-    const upstream = await fetch(url.toString(), {
+    let upstream;
+    try {
+      upstream = await getir();
+    } catch (e) {
+      /* Ağ katmanındaki hata istemciye tanınabilir bir biçimde ulaşmalı:
+         OpenBrow buna bakarak doğru hata sayfasını çizer. */
+      return new Response(JSON.stringify({
+        openbrowError: true,
+        kod: /name not resolved|getaddrinfo|dns/i.test(String(e.message)) ? 'dns' : 'unreachable',
+        ileti: String(e.message || e),
+        url: url.toString(),
+      }), { status: 502, headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS } });
+    }
+
+    function getir() { return fetch(url.toString(), {
       method: request.method === 'POST' ? 'POST' : 'GET',
       body: request.method === 'POST' ? request.body : undefined,
       headers: {
@@ -60,10 +80,32 @@ export default {
         'Accept': request.headers.get('accept') || 'text/html,application/xhtml+xml,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': request.headers.get('accept-language') || 'tr-TR,tr;q=0.9,en;q=0.6',
         'Upgrade-Insecure-Requests': '1',
+        /* Pek çok site yalnızca UA'ya değil, bir tarayıcının gönderdiği
+           bütün başlık kümesine bakar; eksik `Sec-Fetch-*` başlıkları
+           istekleri bot gibi gösteriyordu. */
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
         ...(forceOpenBrowUA ? { 'Sec-CH-UA-Platform': '"OpenOS"' } : {}),
       },
       redirect: 'follow',
-    });
+    }); }
+
+    /* Cloudflare, çözülemeyen alan adı ve ulaşılamayan sunucu için `fetch`i
+       reddetmek yerine 5xx bir yanıt döndürüyor. İstemcinin doğru hata
+       sayfasını çizebilmesi için bunlar da yapılandırılmış hataya çevrilir. */
+    if (upstream.status === 530 || upstream.status === 523 || upstream.status === 522) {
+      return new Response(JSON.stringify({
+        openbrowError: true,
+        kod: upstream.status === 530 ? 'dns' : 'unreachable',
+        ileti: `Sunucuya ulaşılamadı (${upstream.status})`,
+        url: url.toString(),
+      }), { status: 502, headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS } });
+    }
 
     const headers = new Headers(upstream.headers);
     STRIP_HEADERS.forEach(h => headers.delete(h));
@@ -72,19 +114,66 @@ export default {
     headers.set('X-OpenBrow-Final', upstream.url || url.toString());
 
     const type = headers.get('content-type') || '';
+    if (indirme) {
+      headers.set('X-OpenBrow-Length', headers.get('content-length') || '');
+      headers.set('X-OpenBrow-Type', type);
+      return new Response(upstream.body, { status: upstream.status, headers });
+    }
     const passthrough = here.pathname.startsWith('/raw') || !type.includes('text/html');
     if (passthrough) return new Response(upstream.body, { status: upstream.status, headers });
+
+    /* HTML yanıtı önbelleğe alınmamalı. İçine sürümlü bir betik enjekte
+       ediliyor; tarayıcı sayfayı önbellekten verdiğinde eski betik çalışmaya
+       devam ediyor ve motorda yapılan düzeltme hiç görünmüyor. Alt kaynaklar
+       (görsel, stil) bu yoldan geçmediği için hız kaybı olmuyor. */
+    headers.set('Cache-Control', 'no-store, must-revalidate');
+    headers.delete('etag');
+    headers.delete('last-modified');
+    headers.set('X-OpenBrow-Shim', SHIM_SURUM);
 
     const proxyBase = `${here.origin}${here.pathname}?url=`;
     const finalUrl = new URL(upstream.url || url.toString());
 
     return new HTMLRewriter()
+      .on('meta', new CspStripper())
       .on('head', new HeadInjector(finalUrl, proxyBase))
-      .on('a[href]', new LinkRewriter(finalUrl))
+      .on('html', new HtmlFallbackInjector(finalUrl, proxyBase))
       .on('form', new FormMarker(finalUrl))
       .transform(new Response(upstream.body, { status: upstream.status, headers }));
   },
 };
+
+/**
+ * Sayfa içi CSP. Yanıt başlıklarındaki CSP siliniyordu ama belgenin kendi
+ * `<meta http-equiv="Content-Security-Policy">` etiketi kalıyordu. O etiket
+ * satır içi betikleri yasakladığı için enjekte ettiğimiz shim hiç
+ * çalışmıyordu: bağlantılar yakalanmıyor, sağ tuş menüsü engellenmiyor ve
+ * sayfa ana tarayıcının menüsünü gösteriyordu. Etiket burada kaldırılıyor.
+ */
+class CspStripper {
+  element(el) {
+    const he = (el.getAttribute('http-equiv') || '').toLowerCase();
+    if (he === 'content-security-policy' || he === 'content-security-policy-report-only') {
+      el.remove();
+    }
+  }
+}
+
+/**
+ * `<head>` etiketi olmayan belgeler de var (eski sayfalar, kırpılmış HTML).
+ * Böyle bir belgede HeadInjector hiç tetiklenmez; bu yedek `<html>` açılışına
+ * yazar ve yalnızca HeadInjector çalışmadıysa devreye girer.
+ */
+class HtmlFallbackInjector {
+  constructor(url, proxyBase) { this.url = url; this.proxyBase = proxyBase; }
+  element(el) {
+    el.onEndTag(() => {});
+    el.prepend(
+      `<base href="${escapeAttr(this.url.origin + this.url.pathname)}">` +
+      `<script>if(!window.OpenBrow){${shim(this.url.toString(), this.proxyBase)}}</script>`,
+      { html: true });
+  }
+}
 
 class HeadInjector {
   constructor(url, proxyBase) { this.url = url; this.proxyBase = proxyBase; this.done = false; }
@@ -93,16 +182,6 @@ class HeadInjector {
     this.done = true;
     el.prepend(`<base href="${escapeAttr(this.url.origin + this.url.pathname)}">`, { html: true });
     el.append(`<script>${shim(this.url.toString(), this.proxyBase)}</script>`, { html: true });
-  }
-}
-
-class LinkRewriter {
-  constructor(url) { this.url = url; }
-  element(el) {
-    const href = el.getAttribute('href') || '';
-    if (/^(javascript:|mailto:|tel:|#)/i.test(href)) return;
-    try { el.setAttribute('data-openbrow-href', new URL(href, this.url).toString()); } catch {}
-    el.setAttribute('target', '_self');
   }
 }
 
@@ -146,12 +225,40 @@ function shim(pageUrl, proxyBase) {
 
   function post(msg){ try { parent.postMessage(Object.assign({ __openbrow: true }, msg), '*'); } catch(e){} }
 
+  /* İndirilebilir görünen bağlantılar gezinme değil indirme başlatır:
+     download özniteliği olanlar ve gezilemeyecek uzantılar.
+     (Bu blok bir şablon dizesinin içinde; ters tırnak kullanılamaz.) */
+  /* Uzantı denetimi bilerek düzenli ifadesiz: bu blok bir şablon dizesinin
+     içinde yazılıyor ve ters eğik çizgi üç katman arasında (Python → JS
+     kaynağı → şablon dizesi) sessizce kayboluyor. Kaybolduğunda desen
+     geçersiz oluyor, betik ilk satırda çöküyor ve sayfa hiçbir OpenBrow
+     davranışı göstermiyordu: bağlantılar yakalanmıyor, sağ tuş menüsü
+     engellenmiyor, başlık bildirilmiyordu. Dizi karşılaştırması kırılmaz. */
+  var INDIR_UZANTILARI = ['zip','7z','rar','tar','gz','tgz','bz2','xz','exe','msi','dmg','pkg',
+    'deb','rpm','apk','iso','img','bin','jar','pdf','doc','docx','xls','xlsx','ppt','pptx',
+    'odt','ods','epub','mobi','mp3','wav','flac','ogg','m4a','mp4','mkv','avi','mov','webm',
+    'psd','ai','ttf','otf','woff','woff2'];
+
+  function indirilebilirMi(href) {
+    try {
+      var yol = new URL(href, location.href).pathname;
+      var son = yol.split('/').pop() || '';
+      var n = son.lastIndexOf('.');
+      if (n < 0) return false;
+      return INDIR_UZANTILARI.indexOf(son.slice(n + 1).toLowerCase()) !== -1;
+    } catch (e) { return false; }
+  }
+
   document.addEventListener('click', function(e){
     var a = e.target && e.target.closest && e.target.closest('a');
     if (!a) return;
-    var href = a.getAttribute('data-openbrow-href') || a.href;
+    var href = a.href;   /* tarayıcı <base>'e göre zaten mutlaklaştırdı */
     if (!href || /^(javascript:|mailto:|tel:|#)/i.test(href)) return;
     e.preventDefault();
+    if (a.hasAttribute('download') || indirilebilirMi(href)) {
+      post({ type: 'download', url: href, name: a.getAttribute('download') || '' });
+      return;
+    }
     post({ type: 'navigate', url: href, newTab: e.metaKey || e.ctrlKey || a.target === '_blank' });
   }, true);
 
@@ -182,6 +289,16 @@ function shim(pageUrl, proxyBase) {
            image: img, text: String(getSelection() || '') });
   }, true);
   window.open = function(u){ post({ type: 'navigate', url: String(u), newTab: true }); return null; };
+
+  /* Üst çerçeveye yönlendirme zaten sandbox ile engelli. location üzerine
+     yazmak sayfanın kendi betiklerini bozduğu için bilerek yapılmıyor;
+     yalnızca _top/_parent hedefli bağlantılar OpenBrow'a çevriliyor. */
+  document.addEventListener('click', function(e){
+    var a = e.target && e.target.closest && e.target.closest('a[target="_top"], a[target="_parent"]');
+    if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    post({ type: 'navigate', url: a.href });
+  }, true);
   var PB = ${JSON.stringify(proxyBase)};
   window.__openbrowProxy = PB;
 })();`;

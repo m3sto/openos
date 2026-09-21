@@ -2,12 +2,14 @@
    OpenOS · ui/dock.js — the dock, with real magnification
    ========================================================================== */
 
-import { h, clear, on, clamp } from '../core/util.js';
+import { h, clear, on, clamp, fmtBytes, debounce } from '../core/util.js';
 import { icon, hasIcon } from '../core/icons.js';
 import { appIcon } from './appicon.js';
 import { menu } from './menu.js';
 import settings from '../core/settings.js';
 import registry from '../core/registry.js';
+import vfs from '../core/vfs.js';
+import notify from '../core/notify.js';
 
 export class Dock {
   constructor(os) {
@@ -40,6 +42,17 @@ export class Dock {
     this.os.wm.bus.on('closed', () => this.syncRunning());
     this.os.wm.bus.on('focus', () => this.syncRunning());
 
+    /* Çöp kutusunun dolu/boş görünümü dosya sistemiyle birlikte değişmeli.
+       Her dosya olayında Dock'u baştan çizmek israf; yalnızca çöpteki öğe
+       sayısı değiştiğinde çizilir. */
+    let sonCop = -1;
+    const copIzle = () => {
+      const { adet } = vfs.trashUsage();
+      if (adet !== sonCop) { sonCop = adet; this.render(); }
+    };
+    vfs.bus.on('change', debounce(copIzle, 250));
+    copIzle();
+
     this.setupAutohide();
     this.render();
     return this.wrap;
@@ -68,11 +81,19 @@ export class Dock {
     }
 
     this.el.appendChild(h('div.dock-sep'));
+    /* Çöp kutusu doluysa bunu göstermeli: Dock'ta duran simge, içinde bir
+       şey olup olmadığını söylemediği sürece yalnızca bir düğme. */
+    const { adet } = vfs.trashUsage();
     const trash = {
-      id: 'trash', name: 'Çöp Kutusu', glyph: 'trash', tint: ['#9aa0aa', '#6b7078'],
-      onOpen: () => this.os.openApp('finder', { path: '/Users/' + (settings.get('user.name') || 'user') + '/.Trash' }),
+      id: 'trash',
+      name: adet ? `Çöp Kutusu — ${adet} öğe` : 'Çöp Kutusu',
+      glyph: adet ? 'trashFull' : 'trash',
+      tint: adet ? ['#b7a06a', '#8a6d3b'] : ['#9aa0aa', '#6b7078'],
+      onOpen: () => this.os.openApp('finder', { path: vfs.trashDir }),
     };
-    this.el.appendChild(this.makeItem(trash, size, true));
+    const oge = this.makeItem(trash, size, true);
+    if (adet) oge.classList.add('dolu');
+    this.el.appendChild(oge);
   }
 
   makeItem(app, size, isTrash) {
@@ -106,6 +127,24 @@ export class Dock {
   }
 
   itemMenu(app, e) {
+    if (app.id === 'trash') {
+      const { adet, bayt } = vfs.trashUsage();
+      return menu([
+        { header: adet ? `${adet} öğe · ${fmtBytes(bayt)}` : 'Çöp Kutusu boş' },
+        { label: 'Çöp Kutusunu Aç', glyph: 'folderOpen',
+          run: () => this.os.openApp('finder', { path: vfs.trashDir }) },
+        { label: 'Tümünü Geri Yükle', glyph: 'undo', disabled: !adet, run: () => {
+          let n = 0;
+          for (const k of vfs.trashList()) { try { vfs.restore(k.id); n++; } catch {} }
+          notify.toast(`${n} öğe geri yüklendi`, { glyph: '↩️' });
+          this.render();
+        } },
+        '-',
+        { label: 'Çöp Kutusunu Boşalt', glyph: 'trash', danger: true, disabled: !adet,
+          run: async () => { await this.os.emptyTrash(); this.render(); } },
+      ], { x: e.clientX, y: e.clientY });
+    }
+
     const wins = this.os.wm.byApp(app.id);
     const pinned = settings.get('pinned') || [];
     const isPinned = pinned.includes(app.id);

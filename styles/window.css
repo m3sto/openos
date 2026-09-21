@@ -12,18 +12,42 @@
   box-shadow: var(--sh-win-blur);
   transition: box-shadow var(--t) var(--ease);
   animation: win-open .3s var(--spring-soft) both;
-  will-change: transform;
+  /* Kalıcı `will-change` yok: her pencereyi sürekli ayrı bir birleştirme
+     katmanında tutmak, yuvarlak köşeli ve kırpılmış bu katmanın içindeki
+     çapraz kaynaklı <iframe>'in hiç boyanmamasına yol açıyordu. Katman
+     yalnızca sürükleme/jöle sırasında (.dragging / .jelly) isteniyor. */
 }
+.win.dragging { will-change: transform; }
+/* Açılış yalnızca saydamlıkla yapılır. Ölçek/öteleme kullanılınca pencere
+   animasyon boyunca — ve animasyon herhangi bir nedenle başlamazsa kalıcı
+   olarak — bir `transform` taşır; dönüşümlü, yuvarlak köşeli ve kırpılmış bir
+   katmanın içindeki çapraz kaynaklı <iframe> boyanmaz. Karakteri jöle darbesi
+   veriyor, o da bittiğinde dönüşümü sıfırlıyor. */
 @keyframes win-open {
-  from { opacity: 0; transform: scale(.94) translateY(10px); }
-  to   { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .win.focused { box-shadow: var(--sh-win); }
 .win.closing { animation: win-close .18s var(--ease-in) forwards; }
-@keyframes win-close { to { opacity: 0; transform: scale(.95); } }
+@keyframes win-close { to { opacity: 0; } }
 .win.minimizing { transition: transform .35s var(--ease-in), opacity .35s var(--ease-in); opacity: 0; }
 .win.no-anim { animation: none; }
+/* Açılış bittiğinde (ya da hiç çalışmadıysa süresi dolduğunda) animasyon
+   sökülür — pencerenin görünürlüğü artık dolgu kipine bağlı değil. */
+.win.acildi { animation: none; opacity: 1; }
 .win.dragging, .win.resizing { transition: none; }
+
+/* Sürüklerken pahalı bileşikleme işleri askıya alınır. Hareket eden bir
+   katmanın içindeki `backdrop-filter`, pencere her piksel kaydığında arka
+   planın yeniden bulanıklaştırılmasını gerektirir; büyük bir pencerede bu
+   tek başına kare süresini kat kat artırır ve pencere imlecin gerisinden
+   sürüklenir. Bırakınca saniyesinde geri gelir. */
+.win.dragging, .win.dragging *,
+.win.resizing, .win.resizing * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.win.dragging .win-bar, .win.resizing .win-bar { background: var(--surface); }
 .win.maxed { border-radius: 0; }
 .win.snapping { transition: left .2s var(--spring), top .2s var(--spring), width .2s var(--spring), height .2s var(--spring); }
 
@@ -33,7 +57,7 @@
   background: var(--chrome); backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   box-shadow: inset 0 -.5px 0 var(--hairline-soft);
-  cursor: default; user-select: none;
+  cursor: inherit; user-select: none;
 }
 .win-bar.tall { height: 46px; }
 .win:not(.focused) .win-bar { opacity: .82; }
@@ -103,7 +127,7 @@
 }
 .sidebar .sb-item {
   display: flex; align-items: center; gap: 8px; height: 27px; padding: 0 8px;
-  border-radius: var(--r-xs); font-size: 12.5px; cursor: default;
+  border-radius: var(--r-xs); font-size: 12.5px; cursor: inherit;
   transition: background var(--t-fast);
 }
 .sidebar .sb-item:hover { background: var(--hairline-soft); }
@@ -124,7 +148,15 @@
    per-frame transform, and the shadow follows the shape. */
 .win.jelly {
   transition: box-shadow var(--t) var(--ease) !important;
-  will-change: transform, border-radius;
+  /* will-change yalnızca hareket sürerken; kalıcı olursa pencere sürekli
+     ayrı katmanda kalır ve içindeki çapraz kaynaklı çerçeve boyanmaz. */
+  will-change: transform;
 }
 .win.jelly .win-bar { border-radius: inherit; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .win.jelly.focused { box-shadow: var(--sh-win), 0 0 36px -12px color-mix(in srgb, var(--accent) 40%, transparent); }
+
+/* --------------------------------------------------------------------------
+   Web görünümü barındıran pencereler (OpenBrow)
+   Sayfa artık `srcdoc` ile aynı süreçte çizildiği için cam yüzeyler burada da
+   olduğu gibi kalabiliyor; ayrı bir istisnaya gerek yok.
+   -------------------------------------------------------------------------- */

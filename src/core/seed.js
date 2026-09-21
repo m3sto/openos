@@ -3,6 +3,7 @@
    ========================================================================== */
 
 import vfs, { VFS } from './vfs.js';
+import KILAVUZ_METNI from '../../docs/OPENSHARP.md?raw';
 
 export const EXAMPLES = {
   'Sayaç.osh': `# Sayaç — OpenSharp'a hızlı bir giriş
@@ -353,6 +354,26 @@ export function seedFilesystem(user = 'user') {
 }
 
 /** Make sure the expected folders exist on an already-seeded install. */
+/**
+ * Dil kılavuzunu dosya sistemine kopyalar. Belge depoda tek bir kaynakta
+ * duruyor; sistem içinde `cat` ile okunabilmesi ve düzenleyicide
+ * açılabilmesi için oradan alınıp VFS'e yazılır. Her açılışta tazelenir ki
+ * depo güncellenince sistemdeki kopya eskimesin.
+ */
+export const KILAVUZ_YOLU = '/Applications/docs/OPENSHARP.md';
+
+export async function seedGuide() {
+  try {
+    /* Kılavuz ağdan değil paketten geliyor: çevrimdışı da, alt dizinde
+       yayınlandığında da çalışsın ve bir istek eksilsin. */
+    const metin = KILAVUZ_METNI;
+    if (!metin.trim()) return false;
+    vfs.mkdir('/Applications/docs');
+    vfs.write(KILAVUZ_YOLU, metin);
+    return true;
+  } catch { return false; }
+}
+
 export function ensureTree(user = 'user') {
   const home = VFS.join('/Users', user);
   vfs.home = home;

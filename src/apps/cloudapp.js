@@ -34,7 +34,6 @@ const PANES = [
   ['library', 'Kütüphane', 'package', '#30d158'],
   ['published', 'Yayınladıklarım', 'upload', '#ff9f0a'],
   ['security', 'Güvenlik', 'shield', '#ff453a'],
-  ['server', 'Sunucu', 'database', '#8e8e93'],
 ];
 
 class CloudApp {
@@ -82,7 +81,7 @@ class CloudApp {
 
   render() {
     clear(this.body);
-    if (!cloud.signedIn && !['server', 'overview'].includes(this.pane)) return this.renderSignIn();
+    if (!cloud.signedIn && this.pane !== 'overview') return this.renderSignIn();
     const fn = this['p_' + this.pane];
     if (fn) fn.call(this);
     this.body.scrollTop = 0;
@@ -104,7 +103,7 @@ class CloudApp {
   renderSignIn(intro) {
     clear(this.body);
     let mode = 'login';
-    const email = h('input', { type: 'email', placeholder: 'siz@example.com' });
+    const email = h('input', { type: 'text', placeholder: 'siz@example.com' });
     const pass = h('input', { type: 'password', placeholder: '••••••••••' });
     const handle = h('input', { placeholder: 'kullanici_adi', maxlength: 24 });
     const handleRow = this.fieldRow('user', 'var(--purple)', 'Kullanıcı adı', '3–24 karakter · a-z 0-9 - _', handle);
@@ -113,12 +112,26 @@ class CloudApp {
     const submit = h('button.k-btn.v-primary.s-lg', { text: 'Giriş yap' });
     const toggle = h('button.k-btn.v-plain.s-sm', { text: 'Hesabın yok mu? Kaydol' });
 
-    on(toggle, 'click', () => {
-      mode = mode === 'login' ? 'signup' : 'login';
+    /* Kipin görünürdeki karşılığı tek bir yerde kurulur ve açılışta da
+       çağrılır; yalnızca tıklama işleyicisinde durduğunda ilk görünüm eski
+       etiketlerle kalıyordu. */
+    const kipiUygula = () => {
       submit.textContent = mode === 'login' ? 'Giriş yap' : 'Hesap oluştur';
       toggle.textContent = mode === 'login' ? 'Hesabın yok mu? Kaydol' : 'Zaten hesabın var mı? Giriş yap';
       handleRow.style.display = mode === 'login' ? 'none' : '';
+      /* Girişte kullanıcı adı da kabul ediliyor; alan bunu söylemeli, yoksa
+         kullanıcı kayıtta seçtiği adla giremeyeceğini sanıyor. */
+      const etiket = this.mailRow?.querySelector('.k-text:not(.t-caption)');
+      const ipucu = this.mailRow?.querySelector('.t-caption');
+      if (etiket) etiket.textContent = mode === 'login' ? 'E-posta ya da kullanıcı adı' : 'E-posta';
+      if (ipucu) ipucu.textContent = mode === 'login' ? 'İkisi de olur' : '';
+      email.placeholder = mode === 'login' ? 'siz@example.com ya da kullanici_adi' : 'siz@example.com';
       msg.textContent = '';
+    };
+
+    on(toggle, 'click', () => {
+      mode = mode === 'login' ? 'signup' : 'login';
+      kipiUygula();
     });
 
     const go = async () => {
@@ -147,19 +160,19 @@ class CloudApp {
         h('div.k-text.t-callout', { style: { maxWidth: '460px', textAlign: 'center' },
           text: intro || 'Uygulamalarınızı yayınlayın, indirdiklerinizi her cihazda bulun, OpenOS kurulumlarınızı tek yerden görün. Hesap isteğe bağlıdır — App Store hesapsız da çalışır.' })),
       h('div.k-group', { style: { maxWidth: '460px', margin: '0 auto', width: '100%' } },
-        this.fieldRow('mail', 'var(--blue)', 'E-posta', null, email),
+        (this.mailRow = this.fieldRow('mail', 'var(--blue)', 'E-posta', null, email)),
         handleRow,
         this.fieldRow('lock', 'var(--red)', 'Şifre', 'En az 10 karakter, üç farklı sınıf', pass)),
       h('div.k-hstack', { style: { gap: '10px', justifyContent: 'center', marginTop: '4px' } },
         submit, toggle),
       h('div.k-hstack', { style: { justifyContent: 'center' } }, msg),
-      h('div.k-text.t-caption', { style: { textAlign: 'center', marginTop: '10px' },
-        text: 'Sunucu: ' + (cloud.endpoint || 'tanımlı değil') }),
-      h('div.k-hstack', { style: { justifyContent: 'center', gap: '8px' } },
-        h('button.k-btn.v-ghost.s-sm', { text: 'Sunucuyu değiştir', onclick: () => this.select('server') }),
+      h('div.k-hstack', { style: { justifyContent: 'center', gap: '8px', marginTop: '8px' } },
         h('button.k-btn.v-ghost.s-sm', { text: 'Panoyu aç',
           onclick: () => this.ctx.openApp('browser', { url: 'https://m3sto.github.io/openos-cloud/' }) })),
     );
+    /* Satırlar DOM'a girdikten sonra kipi uygula: etiketler ilk açılışta da
+       doğru olsun. */
+    kipiUygula();
   }
 
   fieldRow(glyph, tint, title, sub, field) {
@@ -167,7 +180,9 @@ class CloudApp {
       h('div.lead', { style: { background: tint }, html: icon(glyph, 15) }),
       h('div.k-vstack', { style: { flex: 1, minWidth: 0, gap: '1px' } },
         h('div.k-text', { text: title, style: { fontWeight: 520 } }),
-        sub ? h('div.k-text.t-caption', { text: sub }) : null),
+        /* İpucu satırı her zaman var: kip değiştiğinde metni doldurulabilsin
+           diye. Boşken görünmez. */
+        h('div.k-text.t-caption', { text: sub || '' })),
       h('div.k-field', { style: { width: '230px', flex: '0 0 auto' } }, field));
   }
   infoRow(glyph, tint, title, sub, trailing) {
@@ -434,41 +449,4 @@ class CloudApp {
     );
   }
 
-  /* ---------------- server ---------------- */
-  p_server() {
-    const st = cloud.status();
-    const endpoint = h('input', { value: settings.get('cloud.endpoint'), placeholder: 'https://…workers.dev' });
-    on(endpoint, 'change', () => { settings.set('cloud.endpoint', endpoint.value.trim()); cloud.catalog = null; this.render(); });
-    const device = h('input', { value: cloud.deviceName() });
-    on(device, 'change', () => settings.set('cloud.deviceName', device.value.trim()));
-    const repo = h('input', { value: settings.get('cloud.repo') });
-    on(repo, 'change', () => { settings.set('cloud.repo', repo.value.trim()); cloud.catalog = null; });
-
-    this.body.append(
-      h('div.k-text.t-title', { text: 'Sunucu' }),
-      h('div.k-text.t-callout', { text: 'Kendi OpenOS Cloud örneğinizi çalıştırıyorsanız adresini buraya yazın.' }),
-      h('div.k-group',
-        this.fieldRow('cloud', 'var(--teal)', 'API adresi', st.mode === 'cloud' ? 'bağlı' : 'bağlı değil', endpoint),
-        this.fieldRow('cpu', 'var(--indigo)', 'Cihaz adı', 'Cihaz listesinde böyle görünür', device),
-        this.fieldRow('package', 'var(--purple)', 'GitHub kataloğu', 'Bulut kapalıyken yedek katalog', repo)),
-      h('div.k-hstack', { style: { gap: '8px', marginTop: '10px' } },
-        h('button.k-btn.s-sm', { text: 'Bağlantıyı sına', onclick: () => this.test() }),
-        h('button.k-btn.s-sm', { text: 'Panoyu aç',
-          onclick: () => this.ctx.openApp('browser', { url: 'https://m3sto.github.io/openos-cloud/' }) }),
-        h('button.k-btn.v-ghost.s-sm', { text: 'Kaynak kodu',
-          onclick: () => this.ctx.openApp('browser', { url: 'https://github.com/m3sto/openos-cloud' }) })),
-      h('div.k-text.t-caption', { style: { marginTop: '12px', lineHeight: 1.8 },
-        text: `Katalog kaynağı: ${st.mode} · Oturum: ${st.signedIn ? '@' + st.user.handle : 'yok'}` +
-              (st.error ? ` · Son hata: ${st.error}` : '') }),
-    );
-  }
-
-  async test() {
-    const lines = [];
-    try {
-      const s = await cloud.stats();
-      lines.push(`API çalışıyor · ${s.users} hesap · ${s.apps} uygulama · ${s.devices} cihaz`);
-    } catch (e) { lines.push('API: ' + e.message); }
-    notify.alert(lines.join('\n'), { title: 'Bağlantı sınaması', glyph: '🔌' });
-  }
 }

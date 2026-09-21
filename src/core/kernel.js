@@ -11,9 +11,22 @@ import notify from './notify.js';
 import wm from '../ui/window.js';
 import { Desktop } from '../ui/desktop.js';
 import { menu } from '../ui/menu.js';
+import { upgradeScrollers } from '../ui/scroller.js';
+import { installTextControls } from '../ui/textfield.js';
+import { openFile, saveFile } from '../ui/filedialog.js';
+import { paketOku, paketMi } from '../lang/package.js';
+import clipboard from './clipboard.js';
+import vault from './vault.js';
+import pkg from './pkgmanager.js';
+import permissions from './permissions.js';
+import { toggleShortcuts, closeShortcuts } from '../ui/shortcuts.js';
 import { boot as bootSplash, powerVeil } from '../boot/splash.js';
 import { runSetup } from '../boot/setup.js';
-import { seedFilesystem, ensureTree } from './seed.js';
+import { makineEkrani } from '../boot/machine.js';
+import services from './services.js';
+import sesler from './sounds.js';
+import { alarmServisiniKur } from '../services/alarms.js';
+import { seedFilesystem, ensureTree, seedGuide, KILAVUZ_YOLU } from './seed.js';
 import { thumb } from '../wallpapers/generator.js';
 import { COMPONENT_NAMES } from '../lang/runtime.js';
 
@@ -26,6 +39,9 @@ const EXT_APP = {
   png: 'photos', jpg: 'photos', jpeg: 'photos', svg: 'photos', gif: 'photos',
   mp3: 'music', wav: 'music', html: 'browser',
 };
+
+/* Gezilmek yerine indirilmesi gereken uzantılar. */
+const INDIRILEBILIR = /\.(zip|7z|rar|tar|gz|tgz|bz2|xz|exe|msi|dmg|pkg|deb|rpm|apk|iso|img|bin|jar|pdf|docx?|xlsx?|pptx?|odt|ods|epub|mobi|mp3|wav|flac|ogg|m4a|mp4|mkv|avi|mov|webm|psd|ai|ttf|otf|woff2?|osapp)$/i;
 
 export class Kernel {
   constructor() {
@@ -45,7 +61,18 @@ export class Kernel {
   async start(stage) {
     this.stage = stage;
     settings.load();
-    const hadFs = vfs.load();
+
+    /* Sistem doğrudan açılmıyor: önce hangi diskle açılacağı soruluyor.
+       Klasör izni kullanıcı hareketi gerektiriyor ve o hareketin yeri burası —
+       açılış görüntüsü başladıktan sonra izin istemek mümkün değil. */
+    const { depo } = await makineEkrani(stage);
+    if (depo) {
+      vfs.bagla(depo);
+      this.disk = depo;
+    }
+
+    /* Disk şifreli; açılması anahtarın çözülmesini bekler. */
+    const hadFs = await vfs.load();
     settings.apply();
 
     const firstRun = settings.get('firstRun') || !hadFs;
@@ -85,9 +112,39 @@ export class Kernel {
     this.bindShortcuts();
     this.bindContextMenu();
     this.startClocks();
+    this.wirePackageManager();
+    /* Dil kılavuzu dosya sistemine alınır: `cat` ile okunabilsin, metin
+       düzenleyicide açılabilsin. Ağ olmadığında sessizce atlanır. */
+    seedGuide();
     this.loadUserApps();
 
     this.bus.emit('ready');
+    /* Disk şifresiz yazılmaya başladıysa kullanıcı bunu bilmeli. */
+    /* Diske yazılamıyorsa bu, kullanıcının bilmesi gereken en önemli şey:
+       o andan sonra yaptığı her şey uçucu. */
+    vfs.bus.on('yazilamadi', h => notify.post({
+      title: h.kota ? 'Disk dolu — değişiklikler kaydedilmiyor' : 'Diske yazılamıyor',
+      body: h.kota
+        ? 'Tarayıcının depolama alanı doldu. Çöp kutusunu boşaltın ya da büyük dosyaları silin; o zamana dek yaptığınız değişiklikler kalıcı olmayacak.'
+        : `Değişiklikler kaydedilemiyor: ${h.ileti}`,
+      glyph: 'alert', timeout: 0,
+      actions: [{ label: 'Depolama’yı aç', run: () => this.openApp('storage') }],
+    }));
+
+    vfs.bus.on('sifresiz', durum => notify.post({
+      title: 'Disk şifrelenemiyor',
+      body: (durum?.ileti || 'Anahtar kasası açılamadı.') + ' Veriler şifresiz saklanıyor.',
+      glyph: 'unlock', timeout: 0,
+      actions: [{ label: 'Depolama’yı aç', run: () => this.openApp('storage') }],
+    }));
+
+    if (vfs.kasaHatasi === 'cozulemedi') {
+      setTimeout(() => notify.post({
+        title: 'Disk çözülemedi',
+        body: 'Saklanan veri bu cihazın anahtarıyla açılamıyor — kurcalanmış ya da anahtar değişmiş olabilir. Sistem boş bir diskle açıldı; eski veri silinmedi.',
+        glyph: 'alert', timeout: 0,
+      }), 1400);
+    }
     setTimeout(() => {
       notify.post({
         title: `OpenOS ${VERSION} “${CODENAME}”`,
@@ -98,11 +155,102 @@ export class Kernel {
     if (firstRun) setTimeout(() => this.openApp('welcome'), 1600);
   }
 
+  /** Paket yöneticisi kurulum için çekirdeğe ihtiyaç duyar. */
+  wirePackageManager() { pkg.kernel = this; this.pkg = pkg; }
+
   mountDesktop() {
     this.desktop?.destroy();
     this.desktop = new Desktop(this);
     this.desktop.mount(this.stage);
+    /* Sistemin kendi kaydırma çubukları: sahnedeki her kaydırılabilir alan
+       yükseltilir, sonradan açılan pencereler de izlenerek yakalanır. */
+    upgradeScrollers(this.stage);
+    /* Sistemdeki her metin alanı — uygulamaların kendi yazdıkları dahil —
+       düzenleme bağlam menüsünü kazanır. */
+    installTextControls(document);
+    /* Sistemin kendi panosu: kopyalanan şey OpenOS'ta kalır, ana
+       bilgisayarın panosundan da içeri bir şey sızmaz. */
+    clipboard.install(document);
+    /* Hiçbir bağlantı OpenOS'un dışına çıkmaz. */
+    this.baglantilariYakala();
+    /* Sistem sesleri: bağlam kullanıcının ilk dokunuşunda kuruluyor. */
+    sesler.install(document);
+    this.seslariBagla();
+    /* Arka plan servisleri: pencereler kapalıyken de çalışan işler. */
+    this.servisleriKur();
     this.playHomeEntrance();
+  }
+
+  /**
+   * Arka plan servislerini kurar ve çalıştırır.
+   *
+   * Servisler uygulamalardan bağımsız: Saat penceresi kapalıyken de alarm
+   * çalmalı. Uygulama listeyi gösteriyor, servis saate bakıp bildirimi
+   * düşürüyor.
+   */
+  servisleriKur() {
+    alarmServisiniKur();
+    services.start();
+    this.services = services;
+  }
+
+  /** Sistem olaylarını seslere bağlar. */
+  seslariBagla() {
+    if (this._seslerBagli) return;
+    this._seslerBagli = true;
+    wm.bus.on('open',     () => sesler.cal('ac'));
+    wm.bus.on('close',    () => sesler.cal('kapat'));
+    wm.bus.on('minimize', () => sesler.cal('kucult'));
+    wm.bus.on('state',    w => sesler.cal(w.state === 'normal' ? 'kucult' : 'buyult'));
+    notify.bus?.on?.('post', n => sesler.cal(n?.glyph === 'alert' ? 'uyari' : 'bildirim'));
+    vfs.bus?.on?.('trash', () => sesler.cal('cop'));
+  }
+
+  /**
+   * Sistem içindeki her bağlantıyı yakalar ve OpenBrow'a yönlendirir.
+   *
+   * OpenOS'un kendisi bir web sayfası, dolayısıyla belgesinde duran sıradan
+   * bir `<a href="https://…">` tıklandığında ana tarayıcı ya sayfadan çıkıyor
+   * ya da yeni bir sekme açıyordu — kullanıcı OpenBrow'da gezindiğini sanırken
+   * aslında sistemin dışına atılıyordu. İndirilebilir bir bağlantıda ise
+   * indirme OpenOS'un sanal diskine değil ana bilgisayarın diskine gidiyordu.
+   *
+   * Bu, tek tek uygulamalarda düzeltilebilecek bir hata değil: Markdown
+   * çizici, README görüntüleyici, yardım sayfaları ve sonradan yazılacak her
+   * OpenSharp uygulaması aynı tuzağa düşebilir. Bu yüzden kural sistemin
+   * kendisinde: köke yakalama aşamasında bağlanır, uygulamaların bir şey
+   * yapmasına gerek kalmaz.
+   *
+   * Dokunulmayanlar: sayfa içi çapalar, `mailto:`/`tel:`, ve `download`
+   * özniteliği taşıyan `blob:`/`data:` bağlantıları — sonuncusu sistemin
+   * kendi dışa aktarma yolu (Depolama › Yedek al) ve çalışmaya devam etmeli.
+   */
+  baglantilariYakala() {
+    if (this._baglantiYakalayici) return;
+    this._baglantiYakalayici = (e) => {
+      if (e.defaultPrevented || e.button !== 0) return;
+      const a = e.target?.closest?.('a[href]');
+      if (!a) return;
+      const href = a.getAttribute('href') || '';
+      if (!href || href.startsWith('#')) return;
+      if (/^(mailto:|tel:)/i.test(href)) return;
+      /* Sistemin kendi dosya dışa aktarması: olduğu gibi bırakılır. */
+      if (/^(blob:|data:)/i.test(href) && a.hasAttribute('download')) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      let mutlak = href;
+      try { mutlak = new URL(href, location.href).href; } catch {}
+
+      /* İndirilebilir görünen bağlantı OpenBrow'un indiricisine gider ve
+         dosya sanal diske iner; geri kalanı sekmede açılır. */
+      const indirme = a.hasAttribute('download') || INDIRILEBILIR.test(mutlak.split('?')[0]);
+      this.openApp('browser', indirme
+        ? { indir: mutlak, ad: a.getAttribute('download') || '' }
+        : { url: mutlak, newTab: true });
+    };
+    document.addEventListener('click', this._baglantiYakalayici, true);
   }
 
   /** The iOS-style entrance: the shell drops in from above and springs into place. */
@@ -115,14 +263,38 @@ export class Kernel {
     setTimeout(() => el.classList.remove('home-in'), 1600);
   }
 
-  startClocks() {
+  /**
+   * Pil durumu. Cihazda gerçek bir batarya varsa Battery Status API'sinden
+   * okunur ve olaylarla canlı kalır; yoksa makine prize takılı bir masaüstü
+   * kabul edilir ve göstergede fiş simgesi çıkar.
+   */
+  async startClocks() {
     clearInterval(this._batt);
-    this._batt = setInterval(() => {
-      const b = this.battery;
-      b.level += b.charging ? 0.004 : -0.003;
-      if (b.level >= 1) { b.level = 1; b.charging = false; }
-      if (b.level <= 0.14) b.charging = true;
-    }, 30000);
+    this.battery = { level: 1, charging: true, present: false, source: 'ac' };
+
+    if (navigator.getBattery) {
+      try {
+        const b = await navigator.getBattery();
+        /* Bataryası olmayan masaüstlerinde tarayıcı %100 + şarjda bildirir ve
+           kalan süreler sonsuzdur — gerçek bir pilden böyle ayrılır. */
+        const looksLikeDesktop = b.charging && b.level === 1 &&
+          b.chargingTime === 0 && b.dischargingTime === Infinity;
+        const sync = () => {
+          this.battery = {
+            level: b.level, charging: b.charging, present: !looksLikeDesktop,
+            source: looksLikeDesktop ? 'ac' : 'battery',
+            dischargingTime: b.dischargingTime, chargingTime: b.chargingTime,
+          };
+          this.bus.emit('battery', this.battery);
+          this.desktop?.menubar?.renderRight();
+        };
+        ['levelchange', 'chargingchange', 'chargingtimechange', 'dischargingtimechange']
+          .forEach(ev => b.addEventListener(ev, sync));
+        sync();
+        return;
+      } catch { /* izin verilmedi ya da desteklenmiyor */ }
+    }
+    this.bus.emit('battery', this.battery);
   }
 
   /* ==================== apps ==================== */
@@ -159,6 +331,10 @@ export class Kernel {
       close: () => win.close(),
       openApp: (id, a, n) => this.openApp(id, a, n),
       openPath: p => this.openPath(p),
+      /* Sistem dosya kutuları. Pencere kendiliğinden bağlanır, böylece kutu
+         hangi uygulamanın dosya istediğini gösteren bir sayfa olarak iner. */
+      openFile: (o = {}) => openFile({ win, ...o }),
+      saveFile: (o = {}) => saveFile({ win, ...o }),
       version: VERSION, codename: CODENAME,
     };
   }
@@ -176,12 +352,59 @@ export class Kernel {
     return this.openApp(EXT_APP[s.ext] || 'texteditor', { path });
   }
 
+  /**
+   * Çöp kutusuna atar. Eski sürüm dosyayı taşıyor ama nereden geldiğini
+   * kaydetmiyordu; çöpteki bir şeyi geri koymanın yolu yoktu. Artık kayıt
+   * tutuluyor ve bildirimden tek tıkla geri alınabiliyor.
+   */
   trash(path) {
-    const trashDir = VFS.join(vfs.home, '.Trash');
-    vfs.mkdir(trashDir);
-    const dest = vfs.unique(VFS.join(trashDir, VFS.basename(path)));
-    vfs.move(path, dest);
-    notify.toast('Çöp kutusuna taşındı', { glyph: '🗑️' });
+    let kayit;
+    try { kayit = vfs.trash(path); }
+    catch (e) { notify.toast(e.message, { glyph: '⚠️' }); return null; }
+    if (!kayit) { notify.toast('Kalıcı olarak silindi', { glyph: '🗑️' }); return null; }
+
+    notify.post({
+      title: 'Çöp kutusuna taşındı',
+      body: kayit.ad,
+      glyph: 'trash',
+      timeout: 6000,
+      actions: [{ label: 'Geri al', run: () => {
+        try {
+          const yer = vfs.restore(kayit.id);
+          notify.toast(`Geri yüklendi: ${VFS.basename(yer)}`, { glyph: '↩️' });
+          this.bus.emit('fs:restored', yer);
+        } catch (e) { notify.toast(e.message, { glyph: '⚠️' }); }
+      } }],
+    });
+    return kayit;
+  }
+
+  /** Çöpü boşaltır — onay ister, geri dönüşü yoktur. */
+  async emptyTrash() {
+    const { adet } = vfs.trashUsage();
+    if (!adet) { notify.toast('Çöp kutusu zaten boş', { glyph: '🗑️' }); return false; }
+    const ok = await notify.confirm(
+      `${adet} öğe kalıcı olarak silinecek. Bu işlem geri alınamaz.`,
+      { title: 'Çöp Kutusunu Boşalt', ok: 'Boşalt', danger: true });
+    if (!ok) return false;
+    const n = vfs.emptyTrash();
+    notify.toast(`${n} öğe silindi`, { glyph: '🗑️' });
+    this.bus.emit('fs:trash');
+    return true;
+  }
+
+  /**
+   * Bir uygulamanın açık pencerelerini kapatır. Ajan arayüzünde vardı ama
+   * çekirdekte yoktu; iç kod bu yüzden `wm.closeAll` ile dolaşıyordu.
+   * @param {boolean} [zorla] kapanış onayını atla (görev yöneticisi gibi)
+   */
+  closeApp(id, { zorla = false } = {}) {
+    const pencereler = wm.byApp(id);
+    for (const w of pencereler) {
+      if (zorla) w.onBeforeClose = null;
+      w.close();
+    }
+    return pencereler.length;
   }
 
   recentApps() { return this.recent.map(id => registry.get(id)).filter(Boolean); }
@@ -192,24 +415,40 @@ export class Kernel {
     let list = [];
     try { list = vfs.list(dir); } catch { return; }
     for (const f of list) {
-      if (f.ext !== 'osh') continue;
+      /* Tek dosyalık .osh de, simgesi ve manifesti olan .osapp paketi de
+         kurulabilir; ikisi de burada aynı kapıdan geçer. */
+      const paket = f.type === 'dir' && paketMi(f.path);
+      if (!paket && f.ext !== 'osh') continue;
       try { this.installApp(f.path, { silent: true }); } catch (e) { console.warn('[apps]', e); }
     }
   }
 
   /** Register a .osh file in the VFS as a launchable application. */
   installApp(path, { silent = false } = {}) {
-    const src = vfs.read(path);
-    const meta = parseAppHeader(src);
+    /* Paket ise kimlik manifestten gelir — kaynağın başlığından tahmin
+       etmekten çok daha güvenilir; simge de paketin içinden çıkar. */
+    const paket = paketOku(path);
+    const kaynakYolu = paket ? paket.girisYolu : path;
+    const src = paket ? paket.kaynak : vfs.read(path);
+    const meta = paket ? paket.manifest : parseAppHeader(src);
     const id = meta.id || 'osh_' + slug(meta.name || VFS.basename(path).replace(/\.osh$/, ''));
     const app = registry.register({
       id, name: meta.name || VFS.basename(path), glyph: meta.icon || 'sparkles',
       tint: meta.tint || ['#5e5ce6', '#bf5af2'],
-      category: 'user', kind: 'opensharp', source: path,
+      category: 'user', kind: 'opensharp', source: kaynakYolu,
+      packagePath: paket ? path : null,
+      iconUrl: paket?.simge || null,
+      version: meta.version || null,
       width: meta.width || 480, height: meta.height || 420,
-      about: `OpenSharp uygulaması · ${path}`,
-      mount: (ctx) => this.mountOshApp(ctx, path),
+      about: meta.about || `OpenSharp uygulaması · ${path}`,
+      permissions: Array.isArray(meta.permissions) ? meta.permissions : null,
+      mount: (ctx) => this.mountOshApp(ctx, kaynakYolu),
     });
+    /* Manifest izin bildiriyorsa ilk kurulumda kaydedilir; bildirmiyorsa
+       varsayılanlar geçerli olur (ağ kapalı). */
+    if (Array.isArray(meta.permissions) && !permissions.requested(id)) {
+      permissions.grant(id, meta.permissions);
+    }
     if (!silent) notify.post({ title: 'Uygulama kuruldu', body: app.name, glyph: 'package', tint: app.tint });
     this.bus.emit('app:install', app);
     return app;
@@ -217,17 +456,31 @@ export class Kernel {
 
   mountOshApp(ctx, path) {
     const host = h('div', { style: { position: 'relative', flex: '1', minWidth: 0, display: 'flex' } });
-    const inner = h('div', { style: { flex: '1', minWidth: 0, position: 'relative', overflow: 'auto' } });
+    /* Esnek kap: kök bileşeni `grow: true` yazdığında pencereyi gerçekten
+       doldurabilsin. Blok kap olduğunda `flex` çocukta hiçbir işe yaramıyor,
+       görünüm içerik boyunda kalıyordu. */
+    const inner = h('div', { style: {
+      flex: '1', minWidth: 0, minHeight: 0, position: 'relative', overflow: 'auto',
+      display: 'flex', flexDirection: 'column',
+    } });
     host.appendChild(inner);
     import('../lang/oshapp.js').then(({ OshApp }) => {
       const runner = new OshApp({
         container: inner, appId: ctx.app.id, name: ctx.app.name, tint: ctx.app.tint,
         cwd: VFS.dirname(path), osVersion: VERSION,
+        /* İzinler artık gerçekten uygulanıyor. Verilmediğinde standart
+           kitaplık "hepsi açık" varsayıyordu; imzasız bir paket bütün
+           dosyaları okuyup ağa gönderebiliyordu. */
+        permissions: permissions.get(ctx.app.id),
+        win: ctx.win,
         setTitle: t => ctx.setTitle(t),
         close: () => ctx.close(),
         openApp: (id, a) => this.openApp(id, a),
         onPrint: s => console.log(`[${ctx.app.id}]`, s),
       });
+      /* Çalışan yorumlayıcıya pencereden ulaşılabilsin: ajan arayüzü ve
+         tanılama bunu kullanıyor. */
+      ctx.win.oshRunner = runner;
       runner.start(vfs.read(path));
       ctx.win.onClosed = () => runner.destroy();
       ctx.win.onArgs = () => runner.start(vfs.read(path));
@@ -242,6 +495,7 @@ export class Kernel {
     if (!ok) return;
     wm.closeAll(id);
     registry.unregister(id);
+    permissions.forget(id);
     if (app.source && vfs.exists(app.source)) vfs.remove(app.source);
     settings.set('pinned', (settings.get('pinned') || []).filter(p => p !== id));
     notify.toast('Uygulama kaldırıldı', { glyph: '🗑️' });
@@ -422,9 +676,12 @@ export class Kernel {
 
       if (e.key === 'F4') { e.preventDefault(); return this.toggleLaunchpad(); }
       if (e.key === 'F3') { e.preventDefault(); return this.toggleMission(); }
-      if (e.key === 'Escape') { this.desktop?.closeAllOverlays(); return; }
+      if (e.key === 'Escape') { if (closeShortcuts()) return; this.desktop?.closeAllOverlays(); return; }
 
       if (mod && e.code === 'Space') { e.preventDefault(); return this.toggleSpotlight(); }
+      /* ⌘/ — kısayol paneli. Sistemde onlarca kısayol vardı ve hiçbiri
+         görünmüyordu; bilmeyen hiç kullanmıyordu. */
+      if (mod && (e.key === '/' || e.key === '?')) { e.preventDefault(); return toggleShortcuts(); }
       if (!mod) return;
 
       const win = wm.focused;

@@ -1,0 +1,145 @@
+/* ==========================================================================
+   OpenOS · aero.css — Aero cam
+
+   Tek anahtar (Ayarlar › Pencereler › Aero cam). Kapalıyken sistem
+   tamamen eski görünümünde kalır — buradaki her kural `html.aero` altında.
+
+   Ne yapıyor:
+     · Pencerenin **arka katmanı** saydam. Altında ne varsa (duvar kâğıdı,
+       başka pencere) seçiliyor.
+     · Üstüne buzlu cam bulanıklığı.
+     · Üstüne temanın kendi renginden **çok hafif** bir ton — açık temada
+       beyaza, koyu temada koyuya çalar; okunabilirliği o veriyor.
+     · Trafik ışıkları yalnızca imleç üzerindeyken parlar, yumuşak geçişle.
+
+   Bulanıklık tek yerde, `.win` üzerinde. Başlık paneli ve kenar çubuğu
+   kendi bulanıklıklarını kurmuyor: iç içe `backdrop-filter` hem pahalı hem
+   de camı çamurlaştırıyor — onlar yalnızca ton ekliyor.
+   ========================================================================== */
+
+html.aero {
+  --aero-cam:   color-mix(in srgb, var(--surface) 42%, transparent);  /* pencere gövdesi */
+  --aero-panel: color-mix(in srgb, var(--surface) 26%, transparent);  /* başlık paneli tonu */
+  --aero-sheen: rgba(255, 255, 255, .30);
+  --aero-rim:   rgba(255, 255, 255, .18);
+  --aero-blur:  blur(42px) saturate(185%);
+}
+html.aero[data-theme="dark"] {
+  --aero-cam:   color-mix(in srgb, var(--surface) 46%, transparent);
+  --aero-panel: color-mix(in srgb, var(--surface) 30%, transparent);
+  --aero-sheen: rgba(255, 255, 255, .12);
+  --aero-rim:   rgba(255, 255, 255, .10);
+}
+
+/* ---- pencerenin arka katmanı: saydam + cam ---- */
+html.aero .win {
+  background: var(--aero-cam);
+  backdrop-filter: var(--aero-blur);
+  -webkit-backdrop-filter: var(--aero-blur);
+  box-shadow: var(--sh-win-blur), inset 0 0 0 .5px var(--aero-rim);
+}
+html.aero .win.focused { box-shadow: var(--sh-win), inset 0 0 0 .5px var(--aero-rim); }
+
+/* Uygulama kabuğu pencerenin camını tamamen kapatıyordu. Artık o da saydam,
+   ama tam saydam değil: başlık paneli ve pencere kenarı boydan boya görünsün
+   diye camı geçiriyor, metin okunur kalsın diye üstüne kendi tonunu koyuyor.
+   Terminal bunun istisnası — orada içeriğin de saydam olması istendi. */
+html.aero .app-shell { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+html.aero .win[data-app="terminal"] .app-shell { background: transparent; }
+
+/* ---- başlık paneli: saydam, yalnızca ton ---- */
+html.aero .win-bar {
+  background: var(--aero-panel);
+  /* Bulanıklık pencereden geliyor; burada ikinci bir katman kurulmuyor. */
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  box-shadow: inset 0 1px 0 var(--aero-sheen), inset 0 -.5px 0 var(--hairline-soft);
+  position: relative;
+}
+/* Camın üst kenarından kayan ince ışık — düz bir bulanıklık cam gibi durmuyor. */
+html.aero .win-bar::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 62%;
+  background: linear-gradient(to bottom, rgba(255,255,255,.09), transparent);
+  pointer-events: none; transition: opacity var(--t-fast);
+}
+
+/* Kenar çubuğu da kendi bulanıklığını bırakır, yalnız ton taşır. */
+html.aero .sidebar {
+  background: color-mix(in srgb, var(--surface) 18%, transparent);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+
+/* ---- trafik ışıkları: parıltı yalnızca imleç üzerindeyken ----
+   Sürekli yanan neon, pencere yığınında gürültü oluyordu. Şimdi sönük
+   duruyorlar ve imleç panele gelince yumuşak bir geçişle parlıyorlar —
+   macOS'un simgeleri göstermesiyle aynı an, aynı ritim. */
+html.aero .traffic button {
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22), inset 0 1px 1px rgba(255,255,255,.4);
+  transition: box-shadow .26s var(--ease), filter .26s var(--ease);
+}
+html.aero .win.focused .traffic:hover .c {
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22),
+              0 0 7px rgba(255, 95, 87, .95), 0 0 18px rgba(255, 95, 87, .55);
+}
+html.aero .win.focused .traffic:hover .m {
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22),
+              0 0 7px rgba(254, 188, 46, .95), 0 0 18px rgba(254, 188, 46, .55);
+}
+html.aero .win.focused .traffic:hover .z {
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22),
+              0 0 7px rgba(40, 200, 64, .95), 0 0 18px rgba(40, 200, 64, .55);
+}
+
+/* ---- terminal: içerik ve panel saydam, üstüne cam ve koyu ton ---- */
+html.aero .term {
+  background: color-mix(in srgb, #0a0b0f 58%, transparent);
+  backdrop-filter: var(--aero-blur);
+  -webkit-backdrop-filter: var(--aero-blur);
+}
+/* Terminal penceresinin başlık paneli gövdeyle aynı koyu tonu alsın —
+   açık temada bile terminal koyu kalmalı, panelin beyaza kaçması
+   pencereyi ikiye bölüyordu. */
+html.aero .win[data-app="terminal"] .win-bar {
+  background: color-mix(in srgb, #0a0b0f 40%, transparent);
+  color: #e8eaee;
+}
+html.aero .win[data-app="terminal"] .win-title { color: #e8eaee; }
+
+/* ---- menü çubuğu ve Dock ---- */
+html.aero .menubar {
+  backdrop-filter: var(--aero-blur); -webkit-backdrop-filter: var(--aero-blur);
+  background: var(--aero-panel);
+  box-shadow: inset 0 -.5px 0 var(--hairline-soft), inset 0 1px 0 var(--aero-sheen);
+}
+html.aero .dock {
+  backdrop-filter: var(--aero-blur); -webkit-backdrop-filter: var(--aero-blur);
+  box-shadow: inset 0 1px 0 var(--aero-sheen), var(--sh-pop);
+}
+
+/* ---- OpenBrow saydam olmaz ----
+   Web sayfası arkasında duvar kâğıdı görünürse okunmaz hâle gelir; ayrıca
+   çapraz kaynaklı çerçeveyi saydam bir katmanın içine koymak bu projede
+   daha önce çerçevenin hiç boyanmamasına yol açmıştı. */
+html.aero .ob-frame, html.aero .ob-page, html.aero .ob-pane { background: var(--surface); }
+
+/* ---- grafik ayarlarına saygı ----
+   Bulanıklık ya da saydamlık kapatıldıysa Aero donuk yüzeye iner; parıltı
+   ucuz olduğu için kalır. İki ayar birbirini iptal etmez, sınırlar. */
+html.aero.gfx-blur-off .win, html.aero.gfx-opaque .win,
+html.aero.gfx-blur-off .menubar, html.aero.gfx-opaque .menubar,
+html.aero.gfx-blur-off .dock, html.aero.gfx-opaque .dock,
+html.aero.gfx-blur-off .term, html.aero.gfx-opaque .term {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+html.aero.gfx-blur-off .win, html.aero.gfx-opaque .win { background: var(--surface); }
+html.aero.gfx-blur-off .app-shell, html.aero.gfx-opaque .app-shell { background: var(--surface); }
+html.aero.gfx-blur-off .term, html.aero.gfx-opaque .term { background: #0c0d11; }
+html.aero.gfx-blur-low .win { backdrop-filter: blur(14px) saturate(140%); }
+
+/* Sürüklerken cam askıya alınır: hareket eden bir katmanın arkasını her
+   karede yeniden bulanıklaştırmak kare süresini katlıyor (window.css'te
+   aynı gerekçeyle `backdrop-filter: none !important` var — burada onun
+   bıraktığı saydam gövdeyi donuk yüzeye çeviriyoruz ki pencere sürüklenirken
+   içi boş görünmesin). */
+html.aero .win.dragging, html.aero .win.resizing { background: var(--surface); }
+html.aero .win.dragging .app-shell, html.aero .win.resizing .app-shell { background: var(--surface); }
+html.aero .win.dragging .win-bar::before, html.aero .win.resizing .win-bar::before { opacity: 0; }

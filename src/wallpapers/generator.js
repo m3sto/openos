@@ -4,6 +4,8 @@
    infinitely resizable, and a few of them are alive.
    ========================================================================== */
 
+import { UC_BOYUTLU } from './three.js';
+
 /* ------------------------------------------------------------------ noise */
 const PERM = (() => {
   const p = new Uint8Array(512);
@@ -301,6 +303,11 @@ export const WALLPAPERS = [
     },
   },
 ];
+
+/* WebGL duvar kâğıtları ayrı dosyada yaşıyor ama aynı katalogda görünüyor:
+   kullanıcı için "3B olan" ile "2D olan" ayrı iki liste değil, aynı listedeki
+   farklı seçenekler. Motor yalnızca biri seçilince yükleniyor. */
+WALLPAPERS.push(...UC_BOYUTLU);
 
 export const byId = id => WALLPAPERS.find(w => w.id === id) || WALLPAPERS[0];
 

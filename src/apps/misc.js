@@ -24,7 +24,11 @@ export const about = {
       ['Uygulamalar', String(registry.all().length)],
       ['Depolama', fmtBytes(vfs.usage().bytes)],
     ];
-    return h('div.about', { style: { padding: '28px 24px', display: 'grid', gap: '16px', justifyItems: 'center',
+    /* Izgara satırları, yüksekliği belli bir kapta içeriği sığdırmak için
+       kendiliğinden sıkışır; `align-content: start` bunu engeller, `k-scroll`
+       da taşan kısmı kaydırılabilir yapar. */
+    return h('div.about.k-scroll', { style: { padding: '28px 24px', display: 'grid', gap: '16px',
+                                     justifyItems: 'center', alignContent: 'start',
                                      textAlign: 'center', width: '100%' } },
       h('div', { html: icon('logo', 78, 2), style: { color: 'var(--accent)' } }),
       h('div.k-text.t-largetitle', { text: 'OpenOS' }),

@@ -5,6 +5,7 @@
    ========================================================================== */
 
 import { h, clear, add, on, debounce, escapeHtml, clamp } from '../core/util.js';
+import KILAVUZ_METNI from '../../docs/OPENSHARP.md?raw';
 import { icon, hasIcon } from '../core/icons.js';
 import { menu, contextMenu } from '../ui/menu.js';
 import vfs, { VFS } from '../core/vfs.js';
@@ -16,6 +17,8 @@ import { COMPONENT_NAMES } from '../lang/runtime.js';
 import { EXAMPLES } from '../core/seed.js';
 import { KEYWORDS } from '../lang/lexer.js';
 import { parse } from '../lang/parser.js';
+import { paketYaz, paketOku, manifestiDenetle, kimlikYap, PAKET_UZANTISI } from '../lang/package.js';
+import { textField } from '../ui/textfield.js';
 
 export default {
   id: 'studio', name: 'OpenSharp Studio', glyph: 'code', tint: ['#7b5cff', '#4a2fd0'],
@@ -69,85 +72,379 @@ class Studio {
   }
 
   /* ============================ chrome ============================ */
+  /*
+   * Düzen, yerleşik bir IDE'nin düzenidir:
+   *
+   *   ┌──┬──────────┬──────────────────────┬──────────────┐
+   *   │Et│  Panel   │  sekmeler            │   Önizleme   │
+   *   │ki│ (gezgin/ │  ekmek kırıntısı     │              │
+   *   │nl│  arama/  │  düzenleyici+minimap │              │
+   *   │ik│  paket)  ├──────────────────────┤              │
+   *   │  │          │  konsol / sorunlar   │              │
+   *   └──┴──────────┴──────────────────────┴──────────────┘
+   *                    durum çubuğu
+   */
   build() {
-    /* ---- explorer ---- */
+    this.kurEtkinlikCubugu();
+    this.kurPanel();
+    this.kurDuzenleyici();
+    this.kurAltPanel();
+    this.kurOnizleme();
+    this.kurAracCubugu();
+
+    this.status = h('div.ide-status');
+
+    this.merkez = h('div.ide-center',
+      this.tabstrip,
+      this.ekmek,
+      this.editor,
+      h('div.ide-hdrag'),
+      this.altPanel);
+
+    const orta = h('div.content',
+      this.toolbar,
+      h('div.st-split', this.merkez, h('div.st-drag'), this.rail),
+      this.status);
+
+    this.el = h('div.app-shell.ide', this.etkinlik, this.sidebar, orta);
+    this.setupSplit();
+    this.renderExplorer();
+    this.paneliGoster('explorer');
+  }
+
+  /* ---- sol kenardaki simge rayı ---- */
+  kurEtkinlikCubugu() {
+    const dugme = (kod, glyph, baslik) => {
+      const b = h('button.ide-act', { html: icon(glyph, 19), title: baslik,
+        dataset: { panel: kod }, onclick: () => this.paneliGoster(kod) });
+      return b;
+    };
+    this.etkinlik = h('div.ide-activity',
+      dugme('explorer', 'files', 'Gezgin (⇧⌘E)'),
+      dugme('search', 'search', 'Projede ara (⇧⌘F)'),
+      dugme('problems', 'alert', 'Sorunlar (⇧⌘M)'),
+      dugme('package', 'package', 'Paket ve yayın'),
+      h('div.k-spacer'),
+      h('button.ide-act', { html: icon('bolt', 19), title: 'Komut paleti (⌘K)',
+        onclick: () => this.palette() }),
+      h('button.ide-act', { html: icon('question', 19), title: 'Dil kılavuzu',
+        onclick: () => this.showPane('docs') }),
+    );
+  }
+
+  /* ---- etkinlik çubuğunun açtığı panel ---- */
+  kurPanel() {
     this.explorer = h('div.ide-explorer');
     this.outline = h('div.ide-outline');
-    this.sidebar = h('div.ide-side',
-      h('div.ide-side-head',
-        h('span', { text: 'PROJE' }),
-        h('button.ob-btn.small', { html: icon('plus', 13), title: 'Yeni dosya', onclick: () => this.newFile() }),
-        h('button.ob-btn.small', { html: icon('refresh', 13), title: 'Yenile', onclick: () => this.renderExplorer() })),
+
+    this.panelBaslik = h('span.ide-panel-title', { text: 'GEZGİN' });
+    this.panelEylem = h('div.ide-panel-acts');
+
+    this.panelGezgin = h('div.ide-panel',
       this.explorer,
       h('div.ide-side-head', h('span', { text: 'ANAHAT' })),
       this.outline);
 
-    /* ---- editor ---- */
+    this.aramaAlani = h('input', { placeholder: 'Projede ara', spellcheck: false });
+    this.aramaSonuc = h('div.ide-search-results');
+    this.panelArama = h('div.ide-panel',
+      h('div.ide-search-box', h('div.k-field.plain', this.aramaAlani)),
+      this.aramaSonuc);
+    on(this.aramaAlani, 'input', debounce(() => this.projedeAra(), 220));
+    on(this.aramaAlani, 'keydown', e => { if (e.key === 'Escape') { this.aramaAlani.value = ''; this.projedeAra(); } });
+
+    this.panelSorun = h('div.ide-panel', this.problemsPane = h('div.ide-problems'));
+    this.panelPaket = h('div.ide-panel.ide-pkg');
+
+    this.sidebar = h('div.ide-side',
+      h('div.ide-side-head.ana', this.panelBaslik, h('div.k-spacer'), this.panelEylem),
+      this.panelGezgin, this.panelArama, this.panelSorun, this.panelPaket);
+  }
+
+  paneliGoster(kod) {
+    this.panel = kod;
+    const adlar = { explorer: 'GEZGİN', search: 'ARAMA', problems: 'SORUNLAR', package: 'PAKET' };
+    this.panelBaslik.textContent = adlar[kod] || '';
+    this.etkinlik.querySelectorAll('.ide-act[data-panel]').forEach(b =>
+      b.classList.toggle('on', b.dataset.panel === kod));
+    const eslesme = { explorer: this.panelGezgin, search: this.panelArama,
+                      problems: this.panelSorun, package: this.panelPaket };
+    for (const [k, el] of Object.entries(eslesme)) el.hidden = k !== kod;
+
+    clear(this.panelEylem);
+    if (kod === 'explorer') {
+      this.panelEylem.append(
+        h('button.ide-side-btn', { html: icon('plus', 13), title: 'Yeni dosya', onclick: () => this.newFile() }),
+        h('button.ide-side-btn', { html: icon('refresh', 13), title: 'Yenile', onclick: () => this.renderExplorer() }));
+      this.renderExplorer();
+    } else if (kod === 'search') {
+      setTimeout(() => this.aramaAlani.focus(), 40);
+      this.projedeAra();
+    } else if (kod === 'problems') {
+      this.renderProblems();
+    } else if (kod === 'package') {
+      this.renderPaket();
+    }
+  }
+
+  /* ---- düzenleyici ---- */
+  kurDuzenleyici() {
     this.tabstrip = h('div.ide-tabs');
+    this.ekmek = h('div.ide-breadcrumb');
     this.gutter = h('div.ed-gutter');
     this.hl = h('pre.ed-hl');
     this.ta = h('textarea.ed-ta', { spellcheck: false, autocapitalize: 'off', autocomplete: 'off', wrap: 'off' });
     this.complete = h('div.ide-complete');
-    this.editor = h('div.ed', this.gutter, h('div.ed-scroll', this.hl, this.ta, this.complete));
+    this.satirVurgu = h('div.ed-activeline');
+    this.minimap = h('canvas.ed-minimap', { width: 78 });
+    this.minimapGorus = h('div.ed-minimap-view');
+
+    this.edScroll = h('div.ed-scroll', this.satirVurgu, this.hl, this.ta, this.complete);
+    this.editor = h('div.ed',
+      this.gutter, this.edScroll,
+      h('div.ed-minimap-wrap', this.minimap, this.minimapGorus));
 
     on(this.ta, 'input', () => this.onInput());
     on(this.ta, 'scroll', () => {
       this.hl.scrollTop = this.ta.scrollTop; this.hl.scrollLeft = this.ta.scrollLeft;
       this.gutter.scrollTop = this.ta.scrollTop;
+      this.satirVurguyuTasi();
+      this.minimapGorusuTasi();
       this.hideComplete();
-    });
+    }, { passive: true });
     on(this.ta, 'keydown', e => this.editorKeys(e));
-    on(this.ta, 'click', () => { this.hideComplete(); this.updateStatus(); });
-    on(this.ta, 'keyup', e => { if (!['ArrowUp', 'ArrowDown'].includes(e.key)) this.updateStatus(); });
-    on(this.ta, 'blur', () => setTimeout(() => this.hideComplete(), 160));
+    on(this.ta, 'click', () => { this.hideComplete(); this.updateStatus(); this.satirVurguyuTasi(); });
+    on(this.ta, 'keyup', e => { if (!['ArrowUp', 'ArrowDown'].includes(e.key)) this.updateStatus(); this.satirVurguyuTasi(); });
+    on(this.ta, 'blur', () => { setTimeout(() => this.hideComplete(), 160); this.satirVurgu.style.opacity = '0'; });
+    on(this.ta, 'focus', () => { this.satirVurgu.style.opacity = ''; this.satirVurguyuTasi(); });
     contextMenu(this.editor, () => this.editorMenu());
 
-    /* ---- right rail ---- */
+    /* Minimapte bir yere tıklamak oraya götürür. */
+    on(this.minimap, 'pointerdown', e => {
+      const r = this.minimap.getBoundingClientRect();
+      const oran = (e.clientY - r.top) / r.height;
+      const toplam = this.ta.scrollHeight - this.ta.clientHeight;
+      this.ta.scrollTop = clamp(oran * this.ta.scrollHeight - this.ta.clientHeight / 2, 0, toplam);
+    });
+  }
+
+  /* ---- konsol ve sorunların durduğu alt panel ---- */
+  kurAltPanel() {
+    this.console = h('div.st-console');
+    this.altSorun = h('div.ide-problems.k-scroll');
+    this.altSorun.hidden = true;
+
+    this.altSekme = (ad, kod) => h('button', { text: ad, dataset: { alt: kod },
+      'aria-selected': String(kod === 'console'), onclick: () => this.altGoster(kod) });
+
+    this.altPanel = h('div.ide-bottom',
+      h('div.ide-bottom-bar',
+        this.altSekme('Konsol', 'console'),
+        this.altSorunSekme = this.altSekme('Sorunlar', 'problems'),
+        h('div.k-spacer'),
+        h('button.ide-side-btn', { html: icon('trash', 13), title: 'Konsolu temizle',
+          onclick: () => clear(this.console) }),
+        h('button.ide-side-btn', { html: icon('chevronD', 13), title: 'Paneli gizle',
+          onclick: () => this.altPaneliDondur() })),
+      this.console, this.altSorun);
+  }
+
+  altGoster(kod) {
+    this.altPanel.classList.remove('kapali');
+    this.altPanel.querySelectorAll('.ide-bottom-bar button[data-alt]').forEach(b =>
+      b.setAttribute('aria-selected', String(b.dataset.alt === kod)));
+    this.console.hidden = kod !== 'console';
+    this.altSorun.hidden = kod !== 'problems';
+    if (kod === 'problems') this.renderProblems();
+  }
+
+  altPaneliDondur() { this.altPanel.classList.toggle('kapali'); }
+
+  /* ---- sağdaki canlı önizleme ---- */
+  kurOnizleme() {
     this.previewHost = h('div.st-preview-host');
     this.preview = h('div.st-preview', this.previewHost);
-    this.console = h('div.st-console');
     this.docs = h('div.st-docs.k-scroll');
-    this.problemsPane = h('div.ide-problems.k-scroll');
-    [this.console, this.docs, this.problemsPane].forEach(p => { p.style.display = 'none'; });
+    this.docs.hidden = true;
 
     this.rail = h('div.st-right',
       h('div.st-tabbar',
         this.tabBtn('Önizleme', 'preview', true),
-        this.tabBtn('Konsol', 'console'),
-        this.tabBtn('Sorunlar', 'problems'),
         this.tabBtn('Belgeler', 'docs'),
         h('div.k-spacer'),
-        h('button.ob-btn.small', { html: icon('refresh', 13), title: 'Yeniden çalıştır', onclick: () => this.run() })),
-      this.preview, this.console, this.problemsPane, this.docs);
+        h('button.ide-side-btn', { html: icon('refresh', 13), title: 'Yeniden çalıştır',
+          onclick: () => this.run() })),
+      this.preview, this.docs);
+  }
 
-    /* ---- toolbar ---- */
-    this.fileLabel = h('div.k-text.t-caption.ellipsis', { style: { flex: 1 } });
-    const toolbar = h('div.toolbar',
-      h('button.k-btn.v-primary.s-sm', { html: icon('play', 13), text: ' Çalıştır', title: '⌘↩',
-        onclick: () => this.run() }),
-      h('button.k-btn.s-sm', { html: icon('save', 13), text: ' Kaydet', title: '⌘S', onclick: () => this.save() }),
-      h('button.k-btn.s-sm', { html: icon('package', 13), text: ' Kur', onclick: () => this.install() }),
+  /* ---- üst araç çubuğu ---- */
+  kurAracCubugu() {
+    this.calisBtn = h('button.k-btn.v-primary.s-sm', { html: icon('play', 13), text: ' Çalıştır',
+      title: 'Çalıştır (⌘↩)', onclick: () => this.run() });
+    this.fileLabel = h('div.k-text.t-caption.ellipsis', { style: { flex: 1, textAlign: 'center' } });
+
+    this.toolbar = h('div.toolbar.ide-toolbar',
+      this.calisBtn,
+      h('button.k-btn.v-ghost.icon.s-sm', { html: icon('save', 14), title: 'Kaydet (⌘S)',
+        onclick: () => this.save() }),
+      h('div.tb-sep'),
+      h('button.k-btn.s-sm', { html: icon('package', 13), text: ' Paketle',
+        title: 'Uygulama paketi oluştur', onclick: () => this.paketle() }),
       h('button.k-btn.s-sm', { html: icon('upload', 13), text: ' Yayınla', onclick: () => this.publish() }),
-      h('div.k-divider', { style: { width: '.5px', height: '18px', margin: '0 3px' } }),
-      h('button.k-btn.v-ghost.s-sm', { html: icon('search', 13), text: ' Bul', title: '⌘F',
-        onclick: () => this.openFind() }),
+      this.fileLabel,
       h('button.k-btn.v-ghost.s-sm', { html: icon('sparkles', 13), text: ' Örnekler',
         onclick: e => this.exampleMenu(e) }),
-      this.fileLabel,
-      h('button.k-btn.v-ghost.icon.s-sm', { html: icon('bolt', 14), title: 'Komut paleti (⌘K)',
-        onclick: () => this.palette() }),
-      h('button.k-btn.v-ghost.icon.s-sm', { html: icon('question', 14), title: 'Dil kılavuzu',
-        onclick: () => this.showPane('docs') }));
+      h('button.k-btn.v-ghost.icon.s-sm', { html: icon('search', 14), title: 'Bul (⌘F)',
+        onclick: () => this.openFind() }));
+  }
 
-    this.status = h('div.ide-status');
-    const center = h('div.content',
-      toolbar, this.tabstrip,
-      h('div.st-split', this.editor, h('div.st-drag'), this.rail),
-      this.status);
+  /* ------------------------------------------------ düzenleyici süsleri */
+  get satirYuksekligi() {
+    if (!this._sy) this._sy = parseFloat(getComputedStyle(this.ta).lineHeight) || 19.4;
+    return this._sy;
+  }
 
-    this.el = h('div.app-shell', this.sidebar, center);
-    this.setupSplit();
-    this.renderExplorer();
+  /** İmlecin bulunduğu satırı vurgular. */
+  satirVurguyuTasi() {
+    const oncesi = this.ta.value.slice(0, this.ta.selectionStart);
+    const satir = oncesi.split('\n').length - 1;
+    this.satirVurgu.style.transform =
+      `translateY(${satir * this.satirYuksekligi - this.ta.scrollTop}px)`;
+    this.satirVurgu.style.height = this.satirYuksekligi + 'px';
+  }
+
+  /** Minimap: her satır, girintisi ve uzunluğu kadar bir çizgi. */
+  minimapCiz() {
+    const c = this.minimap, ctx = c.getContext('2d');
+    const satirlar = this.ta.value.split('\n');
+    const olcek = 2;                      /* satır başına piksel */
+    c.height = Math.max(1, Math.min(satirlar.length * olcek, 4000));
+    ctx.clearRect(0, 0, c.width, c.height);
+    const koyu = settings.isDark;
+    satirlar.forEach((l, i) => {
+      const bosluk = l.length - l.trimStart().length;
+      const uzunluk = Math.min(l.trimEnd().length, 74 - Math.min(bosluk, 20));
+      if (uzunluk <= 0) return;
+      ctx.fillStyle = /^\s*#/.test(l) ? (koyu ? '#4d5a46' : '#c9d6c2')
+                    : /^\s*(app|view|fn|state)\b/.test(l.trim()) ? (koyu ? '#8f7ce8' : '#9b8cf0')
+                    : (koyu ? '#5a6070' : '#c3c7d2');
+      ctx.fillRect(Math.min(bosluk, 20), i * olcek, uzunluk, 1);
+    });
+    this.minimapGorusuTasi();
+  }
+
+  minimapGorusuTasi() {
+    const toplam = this.ta.scrollHeight || 1;
+    const g = this.minimapGorus.style;
+    const h0 = (this.ta.clientHeight / toplam) * 100;
+    g.height = Math.min(100, h0) + '%';
+    g.top = (this.ta.scrollTop / toplam) * 100 + '%';
+  }
+
+  /** Dosya › simge yolu. Uzun dosyada nerede olduğunu tek bakışta söyler. */
+  ekmekCiz() {
+    clear(this.ekmek);
+    const t = this.active;
+    if (!t) return;
+    const parcalar = (t.path || t.name).replace(vfs.home, '~').split('/').filter(Boolean);
+    parcalar.forEach((p, i) => {
+      if (i) this.ekmek.appendChild(h('span.sep', { html: icon('chevronR', 9) }));
+      this.ekmek.appendChild(h('span', { text: p, class: i === parcalar.length - 1 ? 'son' : '' }));
+    });
+    /* İmlecin içinde bulunduğu en yakın üst simge. */
+    const simge = this.kapsayanSimge();
+    if (simge) {
+      this.ekmek.appendChild(h('span.sep', { html: icon('chevronR', 9) }));
+      this.ekmek.appendChild(h('span.simge', { html: icon(simge.g, 11) }));
+      this.ekmek.appendChild(h('span.son', { text: simge.n }));
+    }
+  }
+
+  kapsayanSimge() {
+    const satir = this.ta.value.slice(0, this.ta.selectionStart).split('\n').length;
+    const src = this.ta.value.split('\n');
+    for (let i = satir - 1; i >= 0; i--) {
+      const l = src[i] || '';
+      if (/^\s*app\s*\{/.test(l)) return { n: 'app', g: 'package' };
+      if (/^\s*view\s*\{/.test(l)) return { n: 'view', g: 'window' };
+      const f = l.match(/^\s*fn\s+(\w+)/);
+      if (f) return { n: f[1] + '()', g: 'code' };
+    }
+    return null;
+  }
+
+  /* -------------------------------------------------- projede arama */
+  projedeAra() {
+    clear(this.aramaSonuc);
+    const q = this.aramaAlani.value.trim();
+    if (q.length < 2) {
+      this.aramaSonuc.appendChild(h('div.ide-tree-empty',
+        { text: q ? 'en az iki karakter' : 'aramak için yazın' }));
+      return;
+    }
+    const kokler = [VFS.join(vfs.home, 'Projeler'), '/Applications'];
+    const kucuk = q.toLowerCase();
+    let dosyaSayisi = 0, eslesmeSayisi = 0;
+
+    /* Alt klasörlere de inilir: paketlerin (.osapp) içindeki kaynak da
+       projenin parçası ve aranabilir olmalı. */
+    const metinDosyalari = kok => {
+      const bulunan = [];
+      const gez = (yol, derinlik) => {
+        if (derinlik > 3) return;
+        let ogeler = [];
+        try { ogeler = vfs.list(yol); } catch { return; }
+        for (const o of ogeler) {
+          if (o.name.startsWith('.')) continue;
+          if (o.type === 'dir') gez(o.path, derinlik + 1);
+          else if (['osh', 'json', 'md', 'txt'].includes(o.ext)) bulunan.push(o);
+        }
+      };
+      gez(kok, 0);
+      return bulunan;
+    };
+
+    for (const kok of kokler) {
+      if (!vfs.exists(kok)) continue;
+      const dosyalar = metinDosyalari(kok);
+      for (const f of dosyalar) {
+        let metin;
+        try { metin = vfs.read(f.path); } catch { continue; }
+        const satirlar = metin.split('\n');
+        const vurus = [];
+        satirlar.forEach((l, i) => {
+          if (l.toLowerCase().includes(kucuk)) vurus.push({ no: i + 1, metin: l.trim().slice(0, 90) });
+        });
+        if (!vurus.length) continue;
+        dosyaSayisi++; eslesmeSayisi += vurus.length;
+
+        const grup = h('div.ide-search-file');
+        grup.appendChild(h('div.ide-search-head',
+          { onclick: () => grup.classList.toggle('kapali') },
+          h('span.g', { html: icon('fileCode', 12) }),
+          h('span.ellipsis', { text: f.name }),
+          h('span.yer', { text: VFS.basename(VFS.dirname(f.path)) }),
+          h('span.sayi', { text: String(vurus.length) })));
+        vurus.slice(0, 40).forEach(v => grup.appendChild(h('div.ide-search-hit',
+          { onclick: () => { this.openFile(f.path); setTimeout(() => this.jumpTo(v.no), 60); } },
+          h('span.ln', { text: String(v.no) }),
+          h('span.ellipsis', { html: this.vurgula(v.metin, q) }))));
+        this.aramaSonuc.appendChild(grup);
+      }
+    }
+    if (!dosyaSayisi) {
+      this.aramaSonuc.appendChild(h('div.ide-tree-empty', { text: 'eşleşme yok' }));
+    } else {
+      this.aramaSonuc.prepend(h('div.ide-search-summary',
+        { text: `${dosyaSayisi} dosyada ${eslesmeSayisi} eşleşme` }));
+    }
+  }
+
+  vurgula(metin, q) {
+    const kacis = escapeHtml(metin);
+    const i = kacis.toLowerCase().indexOf(q.toLowerCase());
+    if (i === -1) return kacis;
+    return kacis.slice(0, i) + '<mark>' + kacis.slice(i, i + q.length) + '</mark>' + kacis.slice(i + q.length);
   }
 
   tabBtn(label, key, on0) {
@@ -158,15 +455,31 @@ class Studio {
   showPane(which) {
     this.rail.querySelectorAll('.st-tabbar button[data-pane]').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.pane === which)));
-    this.preview.style.display = which === 'preview' ? '' : 'none';
-    this.console.style.display = which === 'console' ? '' : 'none';
-    this.problemsPane.style.display = which === 'problems' ? '' : 'none';
-    this.docs.style.display = which === 'docs' ? '' : 'none';
+    this.preview.hidden = which !== 'preview';
+    this.docs.hidden = which !== 'docs';
     if (which === 'docs' && !this.docs.childElementCount) this.renderDocs();
-    if (which === 'problems') this.renderProblems();
   }
 
   setupSplit() {
+    /* Alt panelin yüksekliği: tutamağı sürükleyince değişir. */
+    const yatay = this.el.querySelector('.ide-hdrag');
+    on(yatay, 'pointerdown', e => {
+      e.preventDefault();
+      const bas = e.clientY;
+      const ilk = this.altPanel.offsetHeight;
+      const tasi = ev => {
+        const y = clamp(ilk - (ev.clientY - bas), 34, this.merkez.offsetHeight - 120);
+        this.altPanel.style.height = y + 'px';
+        this.altPanel.classList.toggle('kapali', y <= 36);
+      };
+      const birak = () => {
+        window.removeEventListener('pointermove', tasi);
+        window.removeEventListener('pointerup', birak);
+      };
+      window.addEventListener('pointermove', tasi);
+      window.addEventListener('pointerup', birak);
+    });
+
     const bar = this.el.querySelector('.st-drag');
     on(bar, 'pointerdown', e => {
       e.preventDefault();
@@ -191,7 +504,8 @@ class Studio {
         { label: 'Farklı Kaydet…', key: '⇧⌘S', glyph: 'save', run: () => this.saveAs() },
         { label: 'Sekmeyi Kapat', key: '⌘W', glyph: 'x', run: () => this.closeTab(this.active) },
         '-',
-        { label: 'Uygulama olarak kur', glyph: 'package', run: () => this.install() },
+        { label: 'Paketle ve Kur…', glyph: 'package', run: () => this.paketle() },
+        { label: 'Tek dosya olarak kur', glyph: 'filePlus', run: () => this.install() },
         { label: 'Mağazada yayınla', glyph: 'upload', run: () => this.publish() },
       ] },
       { title: 'Düzen', items: () => [
@@ -202,10 +516,19 @@ class Studio {
         { label: 'Satırı Çoğalt', key: '⇧⌘D', run: () => this.duplicateLine() },
         { label: 'Yorum Aç/Kapat', key: '⌘/', run: () => this.toggleComment() },
       ] },
+      { title: 'Görünüm', items: () => [
+        { label: 'Gezgin', key: '⇧⌘E', glyph: 'files', run: () => this.paneliGoster('explorer') },
+        { label: 'Projede Ara', key: '⇧⌘F', glyph: 'search', run: () => this.paneliGoster('search') },
+        { label: 'Sorunlar', key: '⇧⌘M', glyph: 'alert', run: () => this.altGoster('problems') },
+        { label: 'Paket', glyph: 'package', run: () => this.paneliGoster('package') },
+        '-',
+        { label: 'Kenar Çubuğu', key: '⌘B', glyph: 'layers', run: () => this.sidebar.classList.toggle('gizli') },
+        { label: 'Alt Panel', key: '⌘J', glyph: 'terminal', run: () => this.altPaneliDondur() },
+      ] },
       { title: 'Çalıştır', items: () => [
         { label: 'Çalıştır', key: '⌘↩', glyph: 'play', run: () => this.run() },
         { label: 'Konsolu temizle', glyph: 'trash', run: () => clear(this.console) },
-        { label: 'Sorunları göster', glyph: 'info', run: () => this.showPane('problems') },
+        { label: 'Sorunları göster', glyph: 'alert', run: () => this.altGoster('problems') },
       ] },
       { title: 'Yardım', items: () => [
         { label: 'OpenSharp kılavuzu', glyph: 'question', run: () => this.showPane('docs') },
@@ -241,6 +564,7 @@ class Studio {
     this.paint();
     this.renderTabs();
     this.renderOutline();
+    this.ekmekCiz();
     this.run();
   }
 
@@ -300,7 +624,7 @@ class Studio {
           '-',
           { label: 'Sil', danger: true, run: async () => {
             if (await notify.confirm(`${f.name} silinsin mi?`, { title: 'Sil', danger: true, ok: 'Sil' })) {
-              vfs.remove(f.path); this.renderExplorer();
+              this.ctx.os.trash(f.path); this.renderExplorer();
             } } },
         ]);
         this.explorer.appendChild(row);
@@ -354,6 +678,13 @@ class Studio {
         return this.acceptComplete();
       }
     }
+
+    /* Panel kısayolları — VS Code'daki karşılıklarıyla aynı tuşlar. */
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); return this.paneliGoster('explorer'); }
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); return this.paneliGoster('search'); }
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); return this.altGoster('problems'); }
+    if (mod && e.key === 'b') { e.preventDefault(); return this.sidebar.classList.toggle('gizli'); }
+    if (mod && e.key === 'j') { e.preventDefault(); return this.altPaneliDondur(); }
 
     if (mod && e.key === 's') { e.preventDefault(); return this.save(); }
     if (mod && e.key === 'Enter') { e.preventDefault(); return this.run(); }
@@ -610,9 +941,11 @@ class Studio {
     });
     this.paintProblems();
     this.updateStatus();
-    const tab = this.rail.querySelector('.st-tabbar button[data-pane="problems"]');
-    if (tab) tab.textContent = this.problems.some(p => p.severity === 'error')
-      ? `Sorunlar (${this.problems.filter(p => p.severity === 'error').length})` : 'Sorunlar';
+    const hata = this.problems.filter(p => p.severity === 'error').length;
+    if (this.altSorunSekme) this.altSorunSekme.textContent = hata ? `Sorunlar (${hata})` : 'Sorunlar';
+    const rozet = this.etkinlik?.querySelector('.ide-act[data-panel="problems"]');
+    if (rozet) rozet.dataset.rozet = hata ? String(hata) : '';
+    if (this.panel === 'problems' || !this.altSorun?.hidden) this.renderProblems();
   }, 320);
 
   paintProblems() {
@@ -625,32 +958,51 @@ class Studio {
   }
 
   renderProblems() {
-    clear(this.problemsPane);
-    if (!this.problems.length) {
-      this.problemsPane.appendChild(h('div.k-empty', h('div.glyph', { text: '✅' }),
-        h('div.k-text.t-callout', { text: 'Sorun yok' })));
-      return;
+    /* Aynı liste iki yerde görünür: yan paneldeki Sorunlar sekmesinde ve alt
+       paneldekinde. İkisi de aynı kaynaktan çizilir. */
+    for (const hedef of [this.problemsPane, this.altSorun]) {
+      if (!hedef) continue;
+      clear(hedef);
+      if (!this.problems.length) {
+        hedef.appendChild(h('div.k-empty',
+          h('div.glyph', { html: icon('check', 26) }),
+          h('div.k-text.t-callout', { text: 'Sorun yok' })));
+        continue;
+      }
+      this.problems.forEach(p => hedef.appendChild(h('div.ide-problem', {
+        class: p.severity, onclick: () => this.jumpTo(p.line) },
+        h('span.g', { html: icon(p.severity === 'error' ? 'x' : 'info', 13) }),
+        h('span.m', { text: p.message }),
+        h('span.l', { text: 'satır ' + p.line }))));
     }
-    this.problems.forEach(p => this.problemsPane.appendChild(h('div.ide-problem', {
-      class: p.severity, onclick: () => this.jumpTo(p.line) },
-      h('span.g', { html: icon(p.severity === 'error' ? 'x' : 'info', 13) }),
-      h('span.m', { text: p.message }),
-      h('span.l', { text: 'satır ' + p.line }))));
   }
 
   updateStatus() {
     const ta = this.ta;
     const upto = ta.value.slice(0, ta.selectionStart).split('\n');
-    const errs = this.problems.filter(p => p.severity === 'error').length;
+    const sec = (ta.selectionEnd ?? 0) - (ta.selectionStart ?? 0);
+    const hata = this.problems.filter(p => p.severity === 'error').length;
+    const uyari = this.problems.filter(p => p.severity !== 'error').length;
+
     clear(this.status);
-    this.status.append(
-      h('span', { text: `Satır ${upto.length}, Sütun ${upto[upto.length - 1].length + 1}` }),
-      h('span', { text: `${ta.value.split('\n').length} satır` }),
-      h('span', { text: `${ta.value.length} karakter` }),
+    const oge = (metin, sinif, glyph, calistir) => h('span.ide-st' + (sinif ? '.' + sinif : ''),
+      { onclick: calistir || null, class: calistir ? 'tiklanir' : '' },
+      ...(glyph ? [h('span.g', { html: icon(glyph, 11) })] : []),
+      h('span', { text: metin }));
+
+    this.status.append(...[
+      oge(this.active?.path ? this.active.path.replace(vfs.home, '~') : 'kaydedilmemiş', '', 'fileCode'),
+      this.active?.dirty ? oge('değiştirildi', 'dirty') : null,
       h('span.k-spacer'),
-      errs ? h('span.err', { text: `${errs} hata` }) : h('span.ok', { text: 'temiz' }),
-      h('span', { text: 'OpenSharp 1.0' }),
-      h('span', { text: this.active?.path ? this.active.path.replace(vfs.home, '~') : 'kaydedilmemiş' }));
+      hata || uyari
+        ? oge(`${hata} hata · ${uyari} uyarı`, hata ? 'err' : 'warn', 'alert', () => this.altGoster('problems'))
+        : oge('sorun yok', 'ok', 'check', () => this.altGoster('problems')),
+      oge(`Satır ${upto.length}, Sütun ${upto[upto.length - 1].length + 1}` + (sec ? ` (${sec})` : ''),
+          '', '', () => this.gotoLine()),
+      oge(`${ta.value.split('\n').length} satır`),
+      oge('2 boşluk'),
+      oge('OpenSharp 1.0', '', 'code'),
+    ].filter(Boolean));
   }
 
   /* ============================ find ============================ */
@@ -816,6 +1168,205 @@ class Studio {
     notify.toast('Kaydedildi', { glyph: '💾' });
   }
 
+  /* ============================ paket ============================ */
+  /**
+   * Kaynağın `app { … }` başlığından manifest türetir. Kullanıcının panelde
+   * elle yazdıkları kazanır: başlık yeniden okununca girdiği ad silinmesin.
+   */
+  manifestTahmini() {
+    const src = this.ta.value;
+    const basli = {};
+    const m = src.match(/app\s*\{([\s\S]*?)\}/);
+    if (m) {
+      const re = /(\w+)\s*:\s*(".*?"|\[.*?\]|[-\d.]+|true|false)/g;
+      let r;
+      while ((r = re.exec(m[1]))) {
+        let v = r[2];
+        if (v.startsWith('"')) v = v.slice(1, -1);
+        else if (v.startsWith('[')) { try { v = JSON.parse(v.replace(/'/g, '"')); } catch { v = undefined; } }
+        else if (v === 'true' || v === 'false') v = v === 'true';
+        else v = parseFloat(v);
+        if (v !== undefined) basli[r[1]] = v;
+      }
+    }
+    const ad = basli.name || (this.active?.name || 'Adsız').replace(/\.osh$/, '');
+    return {
+      name: ad,
+      id: kimlikYap(ad),
+      version: '1.0.0',
+      icon: basli.icon || 'sparkles',
+      tint: basli.tint || ['#5e5ce6', '#bf5af2'],
+      width: basli.width || 480,
+      height: basli.height || 420,
+      author: settings.get('user.name') || '',
+      about: basli.about || '',
+      ...(this.manifest || {}),
+    };
+  }
+
+  renderPaket() {
+    this.manifest = this.manifestTahmini();
+    clear(this.panelPaket);
+
+    const alan = (anahtar, etiket, opts = {}) => {
+      const f = textField({
+        label: etiket, value: String(this.manifest[anahtar] ?? ''), clearable: false, ...opts,
+        onInput: v => { this.manifest[anahtar] = opts.sayi ? Number(v) : v; this.paketDenetle(); },
+      });
+      f.dataset.alan = anahtar;
+      return f;
+    };
+
+    /* Simge: paketin içine gömülen görsel ya da yerleşik glif. */
+    this.simgeOnizleme = h('div.ide-pkg-icon');
+    this.simgeCiz();
+
+    const simgeSec = h('div.ide-pkg-iconrow',
+      this.simgeOnizleme,
+      h('div.k-vstack', { style: { gap: '6px', flex: '1' } },
+        h('button.k-btn.s-sm.full', { html: icon('image', 13), text: ' Görsel seç…',
+          onclick: () => this.simgeSec() }),
+        h('button.k-btn.v-ghost.s-sm.full', { html: icon('sparkles', 13), text: ' Yerleşik simge',
+          onclick: e => this.glifSec(e) }),
+        this.manifest.iconData
+          ? h('button.k-btn.v-plain.s-sm.full', { text: 'Görseli kaldır',
+              onclick: () => { this.manifest.iconData = null; this.renderPaket(); } })
+          : null));
+
+    this.paketSorunlar = h('div.ide-pkg-issues');
+
+    this.panelPaket.append(
+      h('div.ide-pkg-sec', { text: 'KİMLİK' }),
+      alan('name', 'Uygulama adı'),
+      alan('id', 'Paket kimliği', { help: 'Sistemde benzersiz olmalı.' }),
+      alan('version', 'Sürüm'),
+      alan('author', 'Yazar'),
+      h('div.ide-pkg-sec', { text: 'SİMGE' }),
+      simgeSec,
+      h('div.ide-pkg-sec', { text: 'PENCERE' }),
+      h('div.k-hstack', { style: { gap: '8px' } },
+        alan('width', 'Genişlik', { type: 'number', sayi: true }),
+        alan('height', 'Yükseklik', { type: 'number', sayi: true })),
+      h('div.ide-pkg-sec', { text: 'AÇIKLAMA' }),
+      alan('about', '', { multiline: true, autogrow: true, rows: 3,
+                          placeholder: 'Uygulama ne yapıyor?' }),
+      this.paketSorunlar,
+      h('div.ide-pkg-actions',
+        h('button.k-btn.v-primary.s-lg.full', { html: icon('package', 14), text: ' Paketle ve Kur',
+          onclick: () => this.paketle() }),
+        h('button.k-btn.v-ghost.s-sm.full', { html: icon('folder', 13), text: ' Paketi Finder’da göster',
+          disabled: !this.sonPaket, onclick: () => this.ctx.openApp('finder', { path: this.sonPaket }) })),
+    );
+    this.paketDenetle();
+  }
+
+  simgeCiz() {
+    clear(this.simgeOnizleme);
+    if (this.manifest.iconData) {
+      this.simgeOnizleme.appendChild(h('img', { src: this.manifest.iconData,
+        style: { width: '100%', height: '100%', objectFit: 'contain', borderRadius: '14px' } }));
+    } else {
+      const [a, b] = this.manifest.tint || ['#5e5ce6', '#bf5af2'];
+      this.simgeOnizleme.style.background = `linear-gradient(160deg, ${a}, ${b})`;
+      this.simgeOnizleme.innerHTML = icon(hasIcon(this.manifest.icon) ? this.manifest.icon : 'sparkles', 30, 1.7);
+    }
+  }
+
+  /** Dosya sisteminden bir görsel seçtirip pakete gömer. */
+  async simgeSec() {
+    const yol = await this.ctx.openFile({
+      title: 'Uygulama simgesi seç',
+      path: VFS.join(vfs.home, 'Resimler'),
+      filters: [{ ad: 'Görseller', uzantilar: ['png', 'webp', 'jpg', 'jpeg', 'svg'] }],
+    });
+    if (!yol) return;
+    let veri;
+    try { veri = vfs.read(yol); } catch { notify.toast('Görsel okunamadı', { glyph: '⚠️' }); return; }
+    if (!/^data:image\//.test(veri)) {
+      /* SVG metni de kabul edilir; veri URL'ine çevrilir. */
+      if (/^\s*<svg/i.test(veri)) veri = 'data:image/svg+xml;utf8,' + encodeURIComponent(veri);
+      else { notify.toast('Bu dosya görsel değil', { glyph: '⚠️' }); return; }
+    }
+    this.manifest.iconData = veri;
+    this.renderPaket();
+  }
+
+  glifSec(e) {
+    const adaylar = ['sparkles', 'code', 'package', 'bolt', 'grid', 'clock', 'calendar', 'music',
+      'image', 'globe', 'terminal', 'calculator', 'heart', 'star', 'flag', 'camera'];
+    menu(adaylar.filter(hasIcon).map(g => ({
+      label: g, glyph: g, run: () => { this.manifest.icon = g; this.manifest.iconData = null; this.renderPaket(); },
+    })), { anchor: e?.currentTarget });
+  }
+
+  paketDenetle() {
+    if (!this.paketSorunlar) return;
+    const sorunlar = manifestiDenetle(this.manifest);
+    clear(this.paketSorunlar);
+    this.panelPaket.querySelectorAll('.k-textfield').forEach(f => f.setError?.(null));
+    sorunlar.forEach(s0 => {
+      const f = this.panelPaket.querySelector(`.k-textfield[data-alan="${s0.alan}"]`);
+      if (f?.setError) f.setError(s0.ileti);
+      else this.paketSorunlar.appendChild(h('div.ide-pkg-issue', { text: s0.ileti }));
+    });
+    const btn = this.panelPaket.querySelector('.ide-pkg-actions .v-primary');
+    if (btn) btn.disabled = sorunlar.length > 0;
+    return sorunlar;
+  }
+
+  /**
+   * Paketi derler: manifest + kaynak + simge dosya sistemine yazılır,
+   * ardından uygulama kaydedilip Dock'a iliştirilir.
+   */
+  async paketle() {
+    if (this.panel !== 'package') { this.paneliGoster('package'); return; }
+    const sorunlar = this.paketDenetle();
+    if (sorunlar.length) {
+      notify.toast('Paket bilgilerinde eksik var', { glyph: '⚠️' });
+      return;
+    }
+    /* Kaynağı önce kaydet — pakete yazılan ile düzenleyicideki aynı olsun. */
+    if (this.active?.dirty && this.active.path) { vfs.write(this.active.path, this.ta.value); this.active.dirty = false; }
+
+    const m = this.manifest;
+    const dizin = VFS.join('/Applications', `${m.name}.${PAKET_UZANTISI}`);
+    const eski = paketOku(dizin);
+    if (eski && eski.manifest.id !== m.id) {
+      const ok = await notify.confirm(
+        `“${m.name}” adında başka kimlikte bir paket var (${eski.manifest.id}). Üzerine yazılsın mı?`,
+        { title: 'Paketin üzerine yaz', ok: 'Üzerine Yaz', danger: true, root: this.el });
+      if (!ok) return;
+    }
+
+    try {
+      paketYaz({
+        dizin,
+        kaynak: this.ta.value,
+        simge: m.iconData || null,
+        benioku: m.about ? `# ${m.name}\n\n${m.about}\n` : null,
+        manifest: {
+          id: m.id, name: m.name, version: m.version, author: m.author,
+          icon: m.icon, tint: m.tint, width: Number(m.width), height: Number(m.height),
+          about: m.about, osSurumu: this.ctx.version,
+        },
+      });
+    } catch (e) {
+      notify.toast('Paket yazılamadı: ' + e.message, { glyph: '⚠️' });
+      return;
+    }
+
+    this.sonPaket = dizin;
+    const app = this.ctx.os.installApp(dizin);
+    const pinned = settings.get('pinned');
+    if (!pinned.includes(app.id)) settings.set('pinned', [...pinned, app.id]);
+
+    notify.post({ title: 'Paket kuruldu', body: `${m.name} ${m.version} · ${dizin}`,
+      glyph: 'package', tint: m.tint });
+    this.log(`✓ ${dizin} paketlendi ve kuruldu`, 'ok');
+    this.renderExplorer();
+    this.renderPaket();
+  }
+
   async install() {
     if (!this.active?.path) await this.saveAs();
     if (!this.active?.path) return;
@@ -869,17 +1420,40 @@ class Studio {
     const lines = src.split('\n').length;
     this.gutter.innerHTML = Array.from({ length: lines }, (_, i) => `<i>${i + 1}</i>`).join('');
     this.paintProblems();
+    this.minimapCiz();
+    this.ekmekCiz();
+    this.satirVurguyuTasi();
+    this.updateStatus();
   }
 
   /* ============================ docs ============================ */
+  /** Kılavuzu metin düzenleyicide, Markdown önizlemesiyle açar. */
+  async kilavuzuAc() {
+    const yol = '/Applications/docs/OPENSHARP.md';
+    if (!vfs.exists(yol)) {
+      try {
+        vfs.mkdir('/Applications/docs');
+        vfs.write(yol, KILAVUZ_METNI);
+      } catch (e) {
+        notify.toast('Kılavuz bulunamadı: ' + e.message, { glyph: '⚠️' });
+        return;
+      }
+    }
+    this.ctx.openApp('texteditor', { path: yol });
+  }
+
   renderDocs() {
     clear(this.docs);
     const sec = (title, body) => h('div', { style: { marginBottom: '18px' } },
       h('div.k-sectitle', { text: title }), body);
     this.docs.append(
       h('div.k-text.t-title2', { text: 'OpenSharp' }),
-      h('div.k-text.t-callout', { style: { margin: '4px 0 16px' },
+      h('div.k-text.t-callout', { style: { margin: '4px 0 12px' },
         text: 'Durum (state), tepki veren bir görünüm (view) ve OS ile konuşan bir standart kütüphane.' }),
+      /* Buradaki özet hızlı bakmak için; dilin tamamı ayrı bir kılavuzda. */
+      h('button.k-btn.v-tinted.s-sm.full', { html: icon('fileText', 13), text: ' Tam dil kılavuzunu aç',
+        style: { marginBottom: '16px' },
+        onclick: () => this.kilavuzuAc() }),
       sec('Temeller', h('pre.st-code', { html: highlight(
 `# yorum satırı
 let ad = "Dünya"        # sabit değer

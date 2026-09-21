@@ -21,6 +21,25 @@ export class OshApp {
     this.interp = new Interpreter({
       onStateChange: () => this.schedule(),
       onError: e => this.reportError(e),
+      /* `use "./yardimci.osh"` — yollar çağıran dosyanın klasörüne göre
+         çözülür, tıpkı bir modül sisteminde beklendiği gibi. */
+      moduleResolver: {
+        taban: opts.cwd || vfs.home,
+        normalize(yol) {
+          const t = String(yol);
+          return t.startsWith('/') ? VFS.norm(t) : VFS.join(this.taban, t);
+        },
+        read(tamYol) {
+          try { return vfs.read(tamYol); }
+          catch {
+            /* Uzantısız yazıldıysa `.osh` denenir. */
+            try { return vfs.read(tamYol + '.osh'); } catch { return null; }
+          }
+        },
+        /* Yüklenen modülün kendi `use`'ları o modülün klasörüne göre
+           çözülmeli; yoksa iki klasör derinde yollar kayar. */
+        child(tamYol) { return { ...this, taban: VFS.dirname(tamYol) }; },
+      },
     });
   }
 
@@ -62,10 +81,19 @@ export class OshApp {
     return this.meta;
   }
 
+  /**
+   * Yeniden çizimi bir sonraki kareye erteler. `requestAnimationFrame`
+   * arka plandaki sekmede durur; orada durum değişse bile görünüm
+   * güncellenmiyor ve uygulama donmuş görünüyordu. Sekme gizliyken
+   * zamanlayıcıya düşülür — kare hızında olması gerekmiyor, olması
+   * gerekiyor.
+   */
   schedule(force) {
     if (this.dirty && !force) return;
     this.dirty = true;
-    requestAnimationFrame(() => { this.dirty = false; this.render(); });
+    const ciz = () => { this.dirty = false; this.render(); };
+    if (document.hidden) setTimeout(ciz, 32);
+    else requestAnimationFrame(ciz);
   }
 
   captureFocus() {

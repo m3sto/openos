@@ -4,11 +4,24 @@
 
 import { h, add, clamp, uid, setStyle } from '../core/util.js';
 import { icon, hasIcon } from '../core/icons.js';
+import { menu } from '../ui/menu.js';
 import { str, num, truthy, OshElement } from './interpreter.js';
 
 const px = v => (typeof v === 'number' ? v + 'px' : v);
 
 /* Props understood by every component. */
+/**
+ * Değer taşıyan denetimlerde ilk konumsal argüman değerdir:
+ *   Select(secim, options: [...])   Segmented(sekme, options: [...])
+ * Ama seçenekler konumsal da verilebiliyor:
+ *   Select(options: [...])  →  args[0] seçenek listesidir, değer değil.
+ * Ayrım `options:` adlandırılmış özelliğinin varlığına bakılarak yapılır;
+ * başka türlü bir dizi ile bir değer birbirinden ayırt edilemez.
+ */
+function konumsalDeger(el, p) {
+  return p.value ?? (p.options !== undefined ? el.args[0] : undefined);
+}
+
 function applyCommon(node, p) {
   const s = node.style;
   if (p.width !== undefined) s.width = px(p.width);
@@ -180,13 +193,17 @@ export const COMPONENTS = {
 
   Toggle: (el, api) => {
     const p = el.props;
-    const on = truthy(p.value ?? el.args[1] ?? false);
+    /* `Toggle(acik, bind: "acik")` yazmak en doğal biçim ve ilk argümanı
+        etiket saymak onu ekrana "true" diye bastırıyordu. Mantıksal bir ilk
+        argüman her zaman değerdir; etiket olmak için metin olması gerekir. */
+    const ilkMantiksal = typeof el.args[0] === 'boolean';
+    const on = truthy(p.value ?? (ilkMantiksal ? el.args[0] : el.args[1]) ?? false);
     const sw = h('div.k-toggle', { dataset: { on: on ? '1' : '0' } });
-    const label = str(el.args[0] ?? p.label ?? '');
+    const label = str((ilkMantiksal ? p.label : (el.args[0] ?? p.label)) ?? '');
     const row = h('div.k-hstack', { style: { gap: '10px' } },
       label ? h('div.k-text', { text: label, style: { flex: '1' } }) : null, sw);
     const fire = () => {
-      const v = !truthy(p.value ?? false);
+      const v = !on;
       if (p.bind) api.setState(p.bind, v);
       api.invoke(p.onChange, [v]);
     };
@@ -241,11 +258,12 @@ export const COMPONENTS = {
   Select: (el, api) => {
     const p = el.props;
     const opts = p.options || el.args[0] || [];
+    const secili = str(konumsalDeger(el, p) ?? '');
     const sel = h('select.k-select');
     for (const o of opts) {
       const value = (o && typeof o === 'object') ? str(o.value ?? o.id) : str(o);
       const label = (o && typeof o === 'object') ? str(o.label ?? o.name ?? value) : str(o);
-      sel.appendChild(h('option', { value, text: label, selected: value === str(p.value) }));
+      sel.appendChild(h('option', { value, text: label, selected: value === secili }));
     }
     sel.addEventListener('change', () => {
       if (p.bind) api.setState(p.bind, sel.value);
@@ -257,11 +275,12 @@ export const COMPONENTS = {
   Segmented: (el, api) => {
     const p = el.props;
     const opts = p.options || el.args[0] || [];
+    const secili = str(konumsalDeger(el, p) ?? '');
     const n = h('div.k-seg');
     opts.forEach(o => {
       const value = (o && typeof o === 'object') ? str(o.value) : str(o);
       const label = (o && typeof o === 'object') ? str(o.label ?? value) : str(o);
-      const b = h('button', { text: label, 'aria-selected': String(value === str(p.value)) });
+      const b = h('button', { text: label, 'aria-selected': String(value === secili) });
       b.addEventListener('click', () => {
         if (p.bind) api.setState(p.bind, value);
         api.invoke(p.onChange, [value]);
@@ -328,9 +347,19 @@ export const COMPONENTS = {
     return applyCommon(n, p);
   },
 
-  Empty: (el) => h('div.k-empty',
-    h('div.glyph', { text: str(el.props.glyph ?? '📭') }),
-    h('div.k-text.t-callout', { text: str(el.args[0] ?? 'Burası boş') })),
+  /* `glyph` bir yerleşik simge adı ya da bir emoji olabilir. Ad verildiğinde
+     metin olarak basmak — "fileText" yazmak — yanlış; simge çizilmeli. */
+  Empty: (el) => {
+    const g = str(el.props.glyph ?? '');
+    const gorsel = g && hasIcon(g)
+      ? h('div.glyph', { html: icon(g, 30, 1.6), style: { color: 'var(--text-3)' } })
+      : h('div.glyph', { text: g || '📭' });
+    return applyCommon(h('div.k-empty',
+      gorsel,
+      h('div.k-text.t-callout', { text: str(el.args[0] ?? el.props.title ?? 'Burası boş') }),
+      el.props.detail ? h('div.k-text.t-caption', { text: str(el.props.detail) }) : null,
+    ), el.props);
+  },
 
   Tabs: (el, api) => {
     const p = el.props;
@@ -357,14 +386,378 @@ export const COMPONENTS = {
   Canvas: (el, api) => {
     const p = el.props;
     const c = h('canvas', { style: { width: '100%', height: px(p.height || 200), borderRadius: px(p.radius ?? 10) } });
-    requestAnimationFrame(() => {
+
+    /* Çizim bir sonraki karede yapılır; o zamana dek tuval yerleşmiş ve
+       gerçek genişliğini bilir. `requestAnimationFrame` arka plandaki
+       sekmede durduğu için orada tuval hiç çizilmiyordu — gizliyken
+       zamanlayıcıya düşülür. Genişlik ölçülemiyorsa çizim yapılmaz ve
+       ölçüm mümkün olunca yeniden denenir. */
+    let sonGen = 0, sonYuk = 0;
+    const ciz = () => {
+      const gen = c.clientWidth, yuk = c.clientHeight;
+      if (!gen || !yuk) return;                 /* henüz yerleşmedi */
       const dpr = Math.min(devicePixelRatio || 1, 2);
-      c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
+      c.width = gen * dpr; c.height = yuk * dpr;
       const ctx = c.getContext('2d');
       ctx.scale(dpr, dpr);
-      if (p.draw) api.invoke(p.draw, [makePainter(ctx, c.clientWidth, c.clientHeight)]);
+      if (p.draw) api.invoke(p.draw, [makePainter(ctx, gen, yuk)]);
+      sonGen = gen; sonYuk = yuk;
+    };
+
+    /* Sınırlı sayıda yeniden deneme kırılgan: tuval o pencerede yerleşmezse
+       bir daha hiç çizilmiyor. Boyut gözlemcisi ölçü ne zaman gelirse o
+       zaman çizer ve pencere yeniden boyutlandırıldığında da tazeler. */
+    const go = new ResizeObserver(() => {
+      const gen = c.clientWidth, yuk = c.clientHeight;
+      if (!gen || !yuk) return;
+      if (gen === sonGen && yuk === sonYuk) return;
+      ciz();
     });
+    go.observe(c);
+    if (document.hidden) setTimeout(ciz, 32); else requestAnimationFrame(ciz);
     return applyCommon(c, p);
+  },
+
+  /* ================== denetimler ==================
+     Buradaki her öğe sistemin kendi bileşenlerini (`styles/kit.css`) kullanır:
+     OpenSharp ile yazılan bir uygulama, yerli uygulamalardan ayırt edilemez
+     görünmeli. Kendi stilini kuran bir öğe yok. */
+
+  /** Açılır eylem menüsü. Select bir *değer* seçer; Menu bir *iş* yaptırır. */
+  Menu: (el, api) => {
+    const p = el.props;
+    const ogeler = p.items || el.args[1] || [];
+    const b = h('button.k-btn.s-sm', {
+      html: (p.glyph && hasIcon(p.glyph) ? icon(p.glyph, 13) : '') ,
+      text: ' ' + str(el.args[0] ?? p.label ?? 'Menü'),
+    });
+    b.addEventListener('click', (e) => {
+      const r = b.getBoundingClientRect();
+      menu(ogeler.map(o => {
+        if (o === '-' || o?.ayrac || o?.separator) return { separator: true };
+        return {
+          label: str(o.label ?? o.title ?? o),
+          glyph: o.glyph, checked: truthy(o.checked), disabled: truthy(o.disabled),
+          run: () => api.invoke(o.run ?? o.onSelect ?? p.onSelect, [o.value ?? o.label ?? o]),
+        };
+      }), { x: r.left, y: r.bottom + 4 });
+      e.stopPropagation();
+    });
+    return applyCommon(b, p);
+  },
+
+  /** Birbirini dışlayan seçenekler. */
+  RadioGroup: (el, api) => {
+    const p = el.props;
+    const opts = p.options || el.args[0] || [];
+    const gecerli = str(konumsalDeger(el, p) ?? '');
+    const n = h('div.k-vstack', { style: { gap: '7px' } });
+    for (const o of opts) {
+      const value = (o && typeof o === 'object') ? str(o.value) : str(o);
+      const label = (o && typeof o === 'object') ? str(o.label ?? value) : str(o);
+      const secili = value === gecerli;
+      const nokta = h('div', { style: {
+        width: '16px', height: '16px', borderRadius: '50%', flex: '0 0 auto',
+        background: secili ? 'var(--accent)' : 'var(--surface-2)',
+        boxShadow: secili ? 'inset 0 0 0 4px var(--surface)' : 'inset 0 0 0 1px var(--hairline)',
+      } });
+      const satir = h('div.k-hstack', { style: { gap: '8px', cursor: 'default' } },
+        nokta, h('div.k-text', { text: label }));
+      satir.addEventListener('click', () => {
+        if (p.bind) api.setState(p.bind, value);
+        api.invoke(p.onChange, [value]);
+      });
+      n.appendChild(satir);
+    }
+    return applyCommon(n, p);
+  },
+
+  /**
+   * Veri tablosu. `columns` sütunları, `rows` satırları verir; satır bir
+   * nesne ya da dizi olabilir. Gerçek uygulamaların en çok ihtiyaç duyduğu
+   * ve dilde bulunmayan öğe buydu.
+   */
+  Table: (el, api) => {
+    const p = el.props;
+    const sutunlar = (p.columns || el.args[0] || []).map(c =>
+      typeof c === 'object' ? { anahtar: str(c.key ?? c.id), baslik: str(c.label ?? c.key), genislik: c.width }
+                            : { anahtar: str(c), baslik: str(c) });
+    const satirlar = p.rows || el.args[1] || [];
+    const izgara = sutunlar.map(c => c.genislik ? px(c.genislik) : '1fr').join(' ');
+
+    const n = h('div.osh-table');
+    n.appendChild(h('div.osh-tr.osh-th', { style: { gridTemplateColumns: izgara } },
+      ...sutunlar.map(c => h('span', { text: c.baslik }))));
+
+    satirlar.forEach((satir, i) => {
+      const hucreler = sutunlar.map((c, j) => {
+        const v = Array.isArray(satir) ? satir[j] : (satir?.[c.anahtar]);
+        return h('span', { text: v == null ? '' : str(v) });
+      });
+      const tr = h('div.osh-tr', { style: { gridTemplateColumns: izgara } }, ...hucreler);
+      if (p.onSelect) {
+        tr.classList.add('tiklanir');
+        tr.addEventListener('click', () => api.invoke(p.onSelect, [satir, i]));
+      }
+      n.appendChild(tr);
+    });
+    if (!satirlar.length) n.appendChild(h('div.osh-table-bos', { text: str(p.empty ?? 'Kayıt yok') }));
+    return applyCommon(n, p);
+  },
+
+  /** Arama alanı — simgesi ve temizleme düğmesiyle. */
+  SearchField: (el, api) => {
+    const p = el.props;
+    const inp = h('input', { type: 'search', placeholder: str(el.args[0] ?? p.placeholder ?? 'Ara'),
+                             value: str(p.value ?? '') });
+    const n = h('div.k-field.osh-search', h('span.ic', { html: icon('search', 13) }), inp);
+    inp.addEventListener('input', () => {
+      if (p.bind) api.setState(p.bind, inp.value);
+      api.invoke(p.onChange, [inp.value]);
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') api.invoke(p.onSubmit, [inp.value]); });
+    return applyCommon(n, p);
+  },
+
+  /** Sayı artırıcı. Klavyeden de yazılabilir; sınırlar zorlanır. */
+  Stepper: (el, api) => {
+    const p = el.props;
+    const alt = p.min ?? -Infinity, ust = p.max ?? Infinity, adim = num(p.step ?? 1);
+    const deger = () => num(p.value ?? el.args[0] ?? 0);
+    const inp = h('input.osh-stepper-giris', { type: 'text', value: str(deger()) });
+    const yaz = v => {
+      const y = clamp(v, alt, ust);
+      inp.value = str(y);
+      if (p.bind) api.setState(p.bind, y);
+      api.invoke(p.onChange, [y]);
+    };
+    const n = h('div.osh-stepper',
+      h('button', { text: '−', onclick: () => yaz(deger() - adim) }),
+      inp,
+      h('button', { text: '+', onclick: () => yaz(deger() + adim) }));
+    inp.addEventListener('change', () => yaz(parseFloat(inp.value) || 0));
+    return applyCommon(n, p);
+  },
+
+  /** Tarih seçici — tarayıcının yerli seçicisini kullanır. */
+  DatePicker: (el, api) => {
+    const p = el.props;
+    const inp = h('input.k-input', { type: str(p.time ? 'time' : (p.datetime ? 'datetime-local' : 'date')),
+                                     value: str(p.value ?? el.args[0] ?? '') });
+    inp.addEventListener('change', () => {
+      if (p.bind) api.setState(p.bind, inp.value);
+      api.invoke(p.onChange, [inp.value]);
+    });
+    return applyCommon(inp, p);
+  },
+
+  ColorPicker: (el, api) => {
+    const p = el.props;
+    const inp = h('input.osh-renk', { type: 'color', value: str(p.value ?? el.args[0] ?? '#0a84ff') });
+    inp.addEventListener('input', () => {
+      if (p.bind) api.setState(p.bind, inp.value);
+      api.invoke(p.onChange, [inp.value]);
+    });
+    return applyCommon(inp, p);
+  },
+
+  /** Katlanabilir bölüm. */
+  Disclosure: (el, api) => {
+    const p = el.props;
+    const acik = truthy(p.open ?? p.expanded);
+    const ok = h('span.osh-ok', { html: icon('chevronR', 13),
+      style: { transform: acik ? 'rotate(90deg)' : 'none' } });
+    const bas = h('button.osh-disc-bas', ok, h('span', { text: str(el.args[0] ?? p.label ?? '') }));
+    const govde = h('div.osh-disc-govde');
+    if (acik) add(govde, [api.render(el.children)]);
+    bas.addEventListener('click', () => {
+      if (p.bind) api.setState(p.bind, !acik);
+      api.invoke(p.onToggle, [!acik]);
+    });
+    return applyCommon(h('div.osh-disc', bas, govde), p);
+  },
+
+  Toolbar: (el, api) =>
+    applyCommon(add(h('div.toolbar'), [api.render(el.children)]), el.props),
+
+  Chip: (el, api) => {
+    const p = el.props;
+    const n = h('span.osh-chip', { text: str(el.args[0] ?? p.label ?? '') });
+    if (p.tint) n.style.background = str(p.tint);
+    if (p.onClick) { n.classList.add('tiklanir'); n.addEventListener('click', () => api.invoke(p.onClick, [])); }
+    return applyCommon(n, p);
+  },
+
+  /** Satır içi uyarı kutusu. `kind`: info | success | warning | error */
+  Alert: (el, api) => {
+    const p = el.props;
+    const tur = str(p.kind ?? 'info');
+    const glyph = { info: 'info', success: 'check', warning: 'alert', error: 'alert' }[tur] || 'info';
+    const n = h('div.osh-alert', { dataset: { tur } },
+      h('span.ic', { html: icon(glyph, 15) }),
+      h('div.osh-alert-govde',
+        p.title ? h('div.osh-alert-bas', { text: str(p.title) }) : null,
+        h('div', { text: str(el.args[0] ?? p.message ?? '') })));
+    if (el.children?.length) add(n.querySelector('.osh-alert-govde'), [api.render(el.children)]);
+    return applyCommon(n, p);
+  },
+
+  /**
+   * Kip pencere. `open` doğruyken perde ve kart çizilir; yanlışken hiçbir
+   * şey. Perdeye tıklamak `onClose`'u çağırır — kapatma kararı uygulamanın,
+   * çünkü kaydedilmemiş bir işi olabilir.
+   */
+  Dialog: (el, api) => {
+    const p = el.props;
+    if (!truthy(p.open)) return h('div', { style: { display: 'none' } });
+    const kart = h('div.osh-dialog',
+      p.title ? h('div.osh-dialog-bas', { text: str(p.title) }) : null,
+      add(h('div.osh-dialog-govde'), [api.render(el.children)]));
+    const perde = h('div.osh-dialog-perde', kart);
+    perde.addEventListener('pointerdown', e => {
+      if (e.target === perde) api.invoke(p.onClose, []);
+    });
+    return applyCommon(perde, p);
+  },
+
+  /**
+   * Bağlantı. Doğrudan `<a href>` üretmiyor: sistem her bağlantıyı yakalayıp
+   * OpenBrow'a yönlendiriyor ve buradan ana tarayıcıya kaçış olmamalı.
+   */
+  Link: (el, api) => {
+    const p = el.props;
+    const hedef = str(p.url ?? p.href ?? '');
+    const n = h('button.osh-link', { text: str(el.args[0] ?? p.label ?? hedef) });
+    n.addEventListener('click', () => {
+      if (p.onClick) return api.invoke(p.onClick, []);
+      if (hedef) window.__openos?.kernel?.openApp('browser', { url: hedef, newTab: true });
+    });
+    return applyCommon(n, p);
+  },
+
+  /**
+   * Scene3D — OpenSharp uygulamaları için 3B sahne.
+   *
+   * Three.js'in API'si dile açılmıyor; açılsaydı OpenSharp yazan birinin
+   * geometri, malzeme, ışık ve kamera kavramlarını öğrenmesi gerekirdi ve
+   * dilin bütün amacı basitlik. Onun yerine bildirimsel bir nesne listesi
+   * alıyor — dilin geri kalanına benziyor:
+   *
+   *   Scene3D(height: 280, arkaplan: "#05060f", donsun: true, nesneler: [
+   *     { tur: "kup",    boyut: 1.2, renk: "#0a84ff", konum: [0, 0, 0] },
+   *     { tur: "kure",   yaricap: 0.8, renk: "#bf5af2", konum: [2, 0, -1] },
+   *     { tur: "simit",  renk: "#30d158", konum: [-2, 0.5, 0], donme: [0.01, 0.02, 0] }
+   *   ])
+   *
+   * Motor tembel yükleniyor: 3B kullanmayan bir uygulama Three.js'i hiç
+   * indirmiyor.
+   */
+  Scene3D: (el, api) => {
+    const p = el.props;
+    const yukseklik = px(p.height ?? 280);
+    const tuval = h('canvas', { style: { width: '100%', height: yukseklik, display: 'block',
+                                         borderRadius: '10px' } });
+    const nesneler = p.nesneler || p.objects || el.args[0] || [];
+
+    let denetim = null, raf = 0, yokEdildi = false;
+
+    const baslat = async () => {
+      let T;
+      try { T = await import('three'); }
+      catch (e) { console.warn('[osh] 3B motoru yüklenemedi', e); return; }
+      if (yokEdildi || !tuval.isConnected) return;
+
+      const renderer = new T.WebGLRenderer({ canvas: tuval, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      const sahne = new T.Scene();
+      sahne.background = new T.Color(str(p.arkaplan ?? p.background ?? '#0b0e17'));
+      const kamera = new T.PerspectiveCamera(50, 1, 0.1, 200);
+      kamera.position.set(0, 1.4, 6);
+      kamera.lookAt(0, 0, 0);
+
+      sahne.add(new T.AmbientLight(0xffffff, 1.1));
+      const l = new T.DirectionalLight(0xffffff, 2.2);
+      l.position.set(3, 5, 4);
+      sahne.add(l);
+
+      const geometri = (o) => {
+        const tur = str(o.tur ?? o.type ?? 'kup').toLowerCase();
+        if (tur === 'kure' || tur === 'sphere')   return new T.SphereGeometry(num(o.yaricap ?? o.radius ?? 0.8), 32, 24);
+        if (tur === 'simit' || tur === 'torus')   return new T.TorusGeometry(num(o.yaricap ?? 0.7), num(o.kalinlik ?? 0.26), 20, 48);
+        if (tur === 'silindir' || tur === 'cylinder') return new T.CylinderGeometry(num(o.yaricap ?? 0.6), num(o.yaricap ?? 0.6), num(o.boy ?? 1.4), 32);
+        if (tur === 'koni' || tur === 'cone')     return new T.ConeGeometry(num(o.yaricap ?? 0.7), num(o.boy ?? 1.4), 32);
+        if (tur === 'düzlem' || tur === 'duzlem' || tur === 'plane') return new T.PlaneGeometry(num(o.en ?? 2), num(o.boy ?? 2));
+        if (tur === 'ikosahedron' || tur === 'icosahedron') return new T.IcosahedronGeometry(num(o.yaricap ?? 0.8), num(o.detay ?? 0));
+        const b = num(o.boyut ?? o.size ?? 1);
+        return new T.BoxGeometry(b, b, b);
+      };
+
+      const hareketliler = [];
+      for (const o of nesneler) {
+        const m = new T.MeshStandardMaterial({
+          color: new T.Color(str(o.renk ?? o.color ?? '#0a84ff')),
+          metalness: num(o.metal ?? 0.15),
+          roughness: num(o.puruz ?? 0.42),
+          flatShading: !!truthy(o.duzGolge ?? o.flat),
+        });
+        const mesh = new T.Mesh(geometri(o), m);
+        const k = o.konum || o.position || [0, 0, 0];
+        mesh.position.set(num(k[0] ?? 0), num(k[1] ?? 0), num(k[2] ?? 0));
+        const d = o.donme || o.spin;
+        if (d) mesh.userData.donme = [num(d[0] ?? 0), num(d[1] ?? 0), num(d[2] ?? 0)];
+        sahne.add(mesh);
+        if (mesh.userData.donme) hareketliler.push(mesh);
+      }
+
+      const kendiDonsun = truthy(p.donsun ?? p.autoRotate);
+
+      const boyutla = () => {
+        const w = tuval.clientWidth || 1, hh = tuval.clientHeight || 1;
+        renderer.setSize(w, hh, false);
+        kamera.aspect = w / hh;
+        kamera.updateProjectionMatrix();
+      };
+      boyutla();
+      const go = new ResizeObserver(boyutla);
+      go.observe(tuval);
+
+      const ciz = (ts) => {
+        if (yokEdildi || !tuval.isConnected) { temizle(); return; }
+        raf = requestAnimationFrame(ciz);
+        for (const m of hareketliler) {
+          m.rotation.x += m.userData.donme[0];
+          m.rotation.y += m.userData.donme[1];
+          m.rotation.z += m.userData.donme[2];
+        }
+        if (kendiDonsun) {
+          kamera.position.x = Math.sin(ts * 0.00022) * 6;
+          kamera.position.z = Math.cos(ts * 0.00022) * 6;
+          kamera.lookAt(0, 0, 0);
+        }
+        renderer.render(sahne, kamera);
+      };
+
+      /* GPU bağlamı sınırlı: sahne DOM'dan çıkınca kaynaklar bırakılmalı,
+         yoksa birkaç yeniden çizimde "context lost" alınıyor. */
+      const temizle = () => {
+        cancelAnimationFrame(raf);
+        go.disconnect();
+        sahne.traverse(o => {
+          o.geometry?.dispose?.();
+          if (Array.isArray(o.material)) o.material.forEach(x => x.dispose?.());
+          else o.material?.dispose?.();
+        });
+        renderer.dispose();
+        renderer.forceContextLoss?.();
+        denetim = null;
+      };
+      denetim = { temizle };
+      raf = requestAnimationFrame(ciz);
+    };
+
+    baslat();
+    void api;
+    return applyCommon(tuval, p);
   },
 
   WebView: (el) => {

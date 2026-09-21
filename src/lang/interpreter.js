@@ -135,12 +135,53 @@ export class Interpreter {
     switch (node.type) {
       case 'VarDecl': {
         const v = node.init ? this.eval(node.init, env) : null;
+        if (node.pattern) { this.bagla(node.pattern, v, env, node); return; }
         env.define(node.name, v);
         if (node.kind === 'state' && env === this.globals) this.stateNames.add(node.name);
+        if (node.exported) this.disaAc(node.name);
+        return;
+      }
+      case 'Use': return this.modulYukle(node, env);
+      case 'TypeDecl': {
+        env.define(node.ad, this.tipYap(node, env));
+        if (node.exported) this.disaAc(node.ad);
+        return;
+      }
+      case 'EnumDecl': {
+        const uyeler = {};
+        node.uyeler.forEach((u, i) => {
+          uyeler[u.ad] = u.deger ? this.eval(u.deger, env) : u.ad;
+        });
+        Object.freeze(uyeler);
+        env.define(node.ad, uyeler);
+        if (node.exported) this.disaAc(node.ad);
+        return;
+      }
+      case 'Throw': {
+        const v = this.eval(node.arg, env);
+        /* Metin fırlatmak yaygın; hata nesnesine sarılır ki `e.message`
+           her durumda çalışsın. */
+        throw new OshThrow(typeof v === 'object' && v !== null ? v
+          : { message: str(v), value: v }, node.line);
+      }
+      case 'Try': {
+        try {
+          this.exec(node.blok, env);
+        } catch (e) {
+          if (e === BREAK || e === CONTINUE || e instanceof ReturnSignal) { if (node.sonunda) this.exec(node.sonunda, env); throw e; }
+          if (!node.yakala) { if (node.sonunda) this.exec(node.sonunda, env); throw e; }
+          const inner = new Env(env);
+          if (node.yakalaAd) inner.define(node.yakalaAd, hataNesnesi(e));
+          try { this.execBlock(node.yakala.body, inner); }
+          finally { if (node.sonunda) this.exec(node.sonunda, env); }
+          return;
+        }
+        if (node.sonunda) this.exec(node.sonunda, env);
         return;
       }
       case 'FnDecl':
         env.define(node.name, new OshFunction(node, env, this, node.name));
+        if (node.exported) this.disaAc(node.name);
         return;
       case 'ExprStmt': {
         const v = this.eval(node.expr, env);
@@ -202,7 +243,39 @@ export class Interpreter {
       case 'Nil': return null;
       case 'Template': return node.parts.map(p => str(this.eval(p, env))).join('');
       case 'Ident': return env.get(node.name, node.line);
-      case 'ArrayLit': return node.items.map(i => this.eval(i, env));
+      case 'ArrayLit': {
+        const cikti = [];
+        for (const i of node.items) {
+          if (i.type === 'Spread') {
+            const y = this.eval(i.arg, env);
+            if (Array.isArray(y)) cikti.push(...y);
+            else if (y !== null && y !== undefined) cikti.push(y);
+          } else cikti.push(this.eval(i, env));
+        }
+        return cikti;
+      }
+      case 'Match': {
+        const konu = this.eval(node.konu, env);
+        for (const dal of node.dallar) {
+          let uyar;
+          if (dal.tip) uyar = tipAdi(konu) === dal.tip;
+          else if (dal.oruntu === null) uyar = true;                 /* `_` */
+          else uyar = eq(konu, this.eval(dal.oruntu, env));
+          if (!uyar) continue;
+          if (dal.kosul) {
+            const inner = new Env(env);
+            inner.define('_', konu);
+            if (!truthy(this.eval(dal.kosul, inner))) continue;
+          }
+          if (dal.govde.type === 'Block') {
+            try { this.execBlock(dal.govde.body, new Env(env)); }
+            catch (e) { if (e instanceof ReturnSignal) throw e; throw e; }
+            return null;
+          }
+          return this.eval(dal.govde, env);
+        }
+        return null;
+      }
       case 'ObjectLit': return this.evalObject(node, env);
       case 'Lambda': return new OshFunction(node, env, this, 'lambda');
       case 'Ternary': return truthy(this.eval(node.test, env)) ? this.eval(node.cons, env) : this.eval(node.alt, env);
@@ -230,11 +303,13 @@ export class Interpreter {
 
       case 'Member': {
         const o = this.eval(node.obj, env);
+        if (node.optional && (o === null || o === undefined)) return null;
         return member(o, node.name, node.line);
       }
       case 'Index': {
         const o = this.eval(node.obj, env);
         const k = this.eval(node.index, env);
+        if (node.optional && (o === null || o === undefined)) return null;
         if (o === null || o === undefined) throw new OshError(`nil üzerinde [${str(k)}] okunamaz`, node.line);
         if (Array.isArray(o) && typeof k === 'number') {
           const i = k < 0 ? o.length + k : k;
@@ -245,7 +320,13 @@ export class Interpreter {
       }
 
       case 'Call': {
-        const args = node.args.map(a => this.eval(a, env));
+        const args = [];
+        for (const a of node.args) {
+          if (a.type === 'Spread') {
+            const y = this.eval(a.arg, env);
+            if (Array.isArray(y)) args.push(...y); else args.push(y);
+          } else args.push(this.eval(a, env));
+        }
         const named = {};
         for (const k in node.named) named[k] = this.eval(node.named[k], env);
         if (Object.keys(named).length) args.named = named;
@@ -257,10 +338,22 @@ export class Interpreter {
         let thisArg = null, fn;
         if (node.callee.type === 'Member') {
           thisArg = this.eval(node.callee.obj, env);
-          fn = member(thisArg, node.callee.name, node.line);
+          if (node.callee.optional && (thisArg === null || thisArg === undefined)) return null;
+          fn = member(thisArg, node.callee.name, node.line, true);
+          /* Nesnede böyle bir yöntem yoksa standart kitaplığa düşülür:
+             `"abc".upper()` → `upper("abc")`, `[1,2].map(f)` → `map([1,2], f)`.
+             Dilin en çok kullanılan kolaylığı bu. */
+          if (fn === null || fn === undefined) {
+            const kitaplik = this.globals.vars.get(node.callee.name);
+            if (typeof kitaplik === 'function' || kitaplik instanceof OshFunction) {
+              return this.callValue(kitaplik, [thisArg, ...args], named, node, null);
+            }
+            throw new OshError(`'${node.callee.name}' diye bir yöntem yok`, node.line);
+          }
         } else {
           fn = this.eval(node.callee, env);
         }
+        if (node.optional && (fn === null || fn === undefined)) return null;
         return this.callValue(fn, args, named, node, thisArg);
       }
 
@@ -331,8 +424,123 @@ export class Interpreter {
 
   evalObject(node, env) {
     const o = {};
-    for (const k in node.props) o[k] = this.eval(node.props[k], env);
+    /* Yayılanlar yazıldıkları sırada uygulanır: `{...a, x: 1}` ile
+       `{x: 1, ...a}` farklı sonuç verir, tıpkı beklendiği gibi. */
+    const yay = node.yayilanlar || [];
+    const anahtarlar = Object.keys(node.props || {});
+    let y = 0;
+    for (let i = 0; i <= anahtarlar.length; i++) {
+      while (y < yay.length && yay[y].sira === i) {
+        Object.assign(o, this.eval(yay[y].expr, env) || {});
+        y++;
+      }
+      if (i < anahtarlar.length) o[anahtarlar[i]] = this.eval(node.props[anahtarlar[i]], env);
+    }
+    while (y < yay.length) { Object.assign(o, this.eval(yay[y].expr, env) || {}); y++; }
     return o;
+  }
+
+  /** `export` ile açıkça dışa açılan adları işaretler. */
+  disaAc(ad) { (this.disaAcik = this.disaAcik || new Set()).add(ad); }
+
+  /** Yıkarak bağlama: `let {a, b} = o` ve `let [x, ...kalan] = l`. */
+  bagla(pattern, deger, env, node) {
+    if (pattern.kind === 'list') {
+      const dizi = Array.isArray(deger) ? deger : [];
+      pattern.ogeler.forEach((o, i) => {
+        env.define(o.name, o.rest ? dizi.slice(i) : (dizi[i] ?? null));
+        if (node.kind === 'state' && env === this.globals) this.stateNames.add(o.name);
+      });
+      return;
+    }
+    const nesne = (deger && typeof deger === 'object') ? deger : {};
+    const alinan = new Set();
+    for (const o of pattern.ogeler) {
+      if (o.rest) {
+        const kalan = {};
+        for (const k in nesne) if (!alinan.has(k)) kalan[k] = nesne[k];
+        env.define(o.name, kalan);
+      } else {
+        alinan.add(o.anahtar);
+        let v = nesne[o.anahtar];
+        if ((v === undefined || v === null) && o.varsayilan) v = this.eval(o.varsayilan, env);
+        env.define(o.name, v === undefined ? null : v);
+      }
+      if (node.kind === 'state' && env === this.globals) this.stateNames.add(o.name);
+    }
+  }
+
+  /**
+   * `type` bildirimi bir üretici işleve dönüşür. `Nokta(x: 3, y: 4)` çağrısı
+   * alanları varsayılanlarıyla doldurur ve yöntemleri `this` yerine nesnenin
+   * kendisini görecek biçimde bağlar.
+   */
+  tipYap(node, env) {
+    const interp = this;
+    const uretici = function (...args) {
+      const verilen = (args.length && args[args.length - 1] && typeof args[args.length - 1] === 'object'
+                       && !Array.isArray(args[args.length - 1])) ? args[args.length - 1] : {};
+      const örnek = { __tip: node.ad };
+      node.alanlar.forEach((a, i) => {
+        örnek[a.ad] = Object.prototype.hasOwnProperty.call(verilen, a.ad) ? verilen[a.ad]
+                    : (args[i] !== undefined && args[i] !== verilen ? args[i]
+                    : (a.varsayilan ? interp.eval(a.varsayilan, env) : null));
+      });
+      for (const y of node.yontemler) {
+        const kapsam = new Env(env);
+        kapsam.define('self', örnek);
+        örnek[y.ad] = new OshFunction({ params: y.params, body: y.body }, kapsam, interp, node.ad + '.' + y.ad);
+      }
+      return örnek;
+    };
+    uretici.__native = true;
+    uretici.__tipAdi = node.ad;
+    return uretici;
+  }
+
+  /**
+   * `use` — başka bir .osh dosyasını yükler, çalıştırır ve dışa açtıklarını
+   * geçerli kapsama taşır. Aynı dosya iki kez yüklenmez; döngüsel bağımlılık
+   * sessiz bir donma yerine anlaşılır bir hata verir.
+   */
+  modulYukle(node, env) {
+    const cozumle = this.host.moduleResolver;
+    if (!cozumle) throw new OshError('Bu ortamda `use` desteklenmiyor', node.line);
+    this.modules = this.modules || new Map();
+    this.yukleniyor = this.yukleniyor || new Set();
+
+    const anahtar = cozumle.normalize(node.yol);
+    if (this.yukleniyor.has(anahtar)) {
+      throw new OshError(`Döngüsel modül bağımlılığı: ${node.yol}`, node.line);
+    }
+    let disaAcilan = this.modules.get(anahtar);
+    if (!disaAcilan) {
+      const kaynak = cozumle.read(anahtar);
+      if (kaynak === null) throw new OshError(`Modül bulunamadı: ${node.yol}`, node.line);
+      this.yukleniyor.add(anahtar);
+      try {
+        const alt = new Interpreter({ onStateChange: () => {}, onError: e => { throw e; } });
+        alt.host.moduleResolver = cozumle.child ? cozumle.child(anahtar) : cozumle;
+        alt.install(this.globals.vars);
+        alt.load(kaynak);
+        alt.run();
+        disaAcilan = {};
+        for (const [k, v] of alt.globals.vars) {
+          if (!this.globals.vars.has(k) || alt.disaAcik?.has(k)) disaAcilan[k] = v;
+        }
+        this.modules.set(anahtar, disaAcilan);
+      } finally { this.yukleniyor.delete(anahtar); }
+    }
+
+    if (node.takma) { env.define(node.takma, disaAcilan); return; }
+    if (node.adlar) {
+      for (const { ad, takma } of node.adlar) {
+        if (!(ad in disaAcilan)) throw new OshError(`'${ad}' bu modülde yok: ${node.yol}`, node.line);
+        env.define(takma, disaAcilan[ad]);
+      }
+      return;
+    }
+    for (const k in disaAcilan) env.define(k, disaAcilan[k]);
   }
 
   /** Set a state variable from the host (used by two-way bound controls). */
@@ -397,6 +605,7 @@ function binary(op, a, b, line) {
     case '>': return cmp(a, b) > 0;
     case '<=': return cmp(a, b) <= 0;
     case '>=': return cmp(a, b) >= 0;
+    case 'is': return tipAdi(a) === str(b);
     case 'in':
       if (Array.isArray(b)) return b.some(x => eq(x, a));
       if (typeof b === 'string') return b.includes(str(a));
@@ -419,14 +628,50 @@ function cmp(a, b) {
   return num(a) - num(b);
 }
 
-function member(o, name, line) {
-  if (o === null || o === undefined) throw new OshError(`nil üzerinde '.${name}' okunamaz`, line);
+/**
+ * `throw` ile fırlatılan değerin taşıyıcısı. Yorumlayıcının kendi
+ * denetim sinyallerinden (break/continue/return) ayırt edilebilmesi için
+ * ayrı bir sınıf.
+ */
+export class OshThrow {
+  constructor(deger, line) { this.deger = deger; this.line = line; }
+  get message() { return this.deger?.message ?? str(this.deger); }
+}
+
+/** Yakalanan her şeyi OpenSharp tarafında okunabilir bir nesneye çevirir. */
+function hataNesnesi(e) {
+  if (e instanceof OshThrow) return e.deger;
+  if (e instanceof OshError) return { message: e.message, line: e.line, kind: 'dil' };
+  if (e instanceof Error) return { message: e.message, kind: 'sistem' };
+  return { message: str(e), kind: 'bilinmeyen' };
+}
+
+/** `match … is` ve `type(v)` için ortak tür adı. */
+function tipAdi(v) {
+  if (Array.isArray(v)) return 'list';
+  if (v === null || v === undefined) return 'nil';
+  if (typeof v === 'object' && v.__tip) return v.__tip;
+  if (typeof v === 'object') return 'obj';
+  if (typeof v === 'function') return 'fn';
+  return typeof v === 'number' ? 'num' : typeof v === 'boolean' ? 'bool' : 'str';
+}
+
+/**
+ * Üye okuma. `yumusak` kipinde bulunmayan üye için hata atmaz, `null` döner —
+ * çağrı yolunda standart kitaplığa düşebilmek için gerekli.
+ */
+function member(o, name, line, yumusak) {
+  if (o === null || o === undefined) {
+    if (yumusak) return null;
+    throw new OshError(`nil üzerinde '.${name}' okunamaz`, line);
+  }
   if (typeof o === 'string' || Array.isArray(o)) {
     if (name === 'length' || name === 'len') return o.length;
   }
+  if (typeof o === 'object' && name === 'type') return tipAdi(o);
   const v = o[name];
   if (v === undefined) return null;
-  if (typeof v === 'function') return v.bind(o);
+  if (typeof v === 'function' && !(v instanceof OshFunction)) return v.bind(o);
   return v;
 }
 

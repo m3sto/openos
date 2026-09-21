@@ -1,0 +1,245 @@
+app {
+  name: "Alışkanlıklar"
+  id: "aliskanliklar"
+  version: "1.0.0"
+  icon: "check"
+  tint: ["#5ac8fa", "#0a84ff"]
+  width: 700
+  height: 600
+  author: "m3sto"
+  about: "Günlük alışkanlık takibi: seri sayacı, 12 haftalık ısı haritası ve başarı oranı."
+}
+
+type Aliskanlik {
+  id = ""
+  ad = ""
+  renk = "#0a84ff"
+  gunler = []          # "YYYY-AA-GG" listesi
+  olusturma = 0
+
+  fn yapildiMi(gun) { return gun in self.gunler }
+
+  fn seri() {
+    let n = 0
+    let g = bugun()
+    while self.yapildiMi(g) {
+      n = n + 1
+      g = gunEkle(g, -1)
+    }
+    return n
+  }
+
+  fn sonNGun(n) {
+    return len(filter(sonGunler(n), fn(g) => self.yapildiMi(g)))
+  }
+}
+
+state aliskanliklar = []
+state yeniAd = ""
+state secili = nil
+
+# ------------------------------------------------------------ tarih
+
+fn gunAnahtari(ts) {
+  let p = date_parts(ts)
+  return "${p.year}-${pad(str(p.month), 2)}-${pad(str(p.day), 2)}"
+}
+
+fn bugun() { return gunAnahtari(now()) }
+
+fn gunEkle(anahtar, kacGun) {
+  let p = split(anahtar, "-")
+  let ts = date_make(num(p[0]), num(p[1]), num(p[2]))
+  return gunAnahtari(date_add(ts, kacGun))
+}
+
+fn sonGunler(n) {
+  let liste = []
+  for i in n {
+    push(liste, gunEkle(bugun(), -(n - 1 - i)))
+  }
+  return liste
+}
+
+# ------------------------------------------------------------ veri
+
+fn yukle() {
+  let ham = store_get("aliskanliklar", [])
+  aliskanliklar = map(ham, fn(a) => Aliskanlik(id: a.id, ad: a.ad, renk: a.renk,
+                                                gunler: a.gunler, olusturma: a.olusturma))
+  if len(aliskanliklar) > 0 { secili = aliskanliklar[0].id }
+}
+
+fn kaydet() {
+  store_set("aliskanliklar", map(aliskanliklar, fn(a) => {
+    id: a.id, ad: a.ad, renk: a.renk, gunler: a.gunler, olusturma: a.olusturma
+  }))
+}
+
+let PALET = ["#0a84ff", "#30d158", "#ff9f0a", "#bf5af2", "#ff375f", "#5ac8fa", "#ffd60a"]
+
+fn ekle() {
+  let ad = trim(yeniAd)
+  if ad == "" { return }
+  let a = Aliskanlik(id: uuid(), ad: ad,
+                     renk: PALET[len(aliskanliklar) % len(PALET)],
+                     gunler: [], olusturma: now())
+  push(aliskanliklar, a)
+  yeniAd = ""
+  secili = a.id
+  kaydet()
+}
+
+fn isaretle(a, gun) {
+  if a.yapildiMi(gun) {
+    a.gunler = filter(a.gunler, fn(g) => g != gun)
+  } else {
+    push(a.gunler, gun)
+  }
+  kaydet()
+}
+
+fn sil(a) {
+  confirm("“${a.ad}” ve tüm geçmişi silinsin mi?", fn(ok) {
+    if not ok { return }
+    aliskanliklar = filter(aliskanliklar, fn(x) => x.id != a.id)
+    if secili == a.id { secili = len(aliskanliklar) > 0 ? aliskanliklar[0].id : nil }
+    kaydet()
+    refresh()
+  })
+}
+
+fn seciliAliskanlik() { return find(aliskanliklar, fn(a) => a.id == secili) }
+
+fn bugunYapilan() {
+  return len(filter(aliskanliklar, fn(a) => a.yapildiMi(bugun())))
+}
+
+# ------------------------------------------------------------ ısı haritası
+
+fn cizHarita(p) {
+  p.clear()
+  let a = seciliAliskanlik()
+  if is_nil(a) { return }
+
+  let hafta = 12
+  let gunler = sonGunler(hafta * 7)
+  let kutu = 13
+  let bosluk = 3
+  let solPay = 26
+  let ustPay = 14
+
+  for i in len(gunler) {
+    let g = gunler[i]
+    let sutun = floor(i / 7)
+    let satir = i % 7
+    let x = solPay + sutun * (kutu + bosluk)
+    let y = ustPay + satir * (kutu + bosluk)
+    if a.yapildiMi(g) {
+      p.fill(a.renk).rect(x, y, kutu, kutu, 3)
+    } else {
+      p.fill("#8e8e9322").rect(x, y, kutu, kutu, 3)
+    }
+  }
+
+  let adlar = ["Pzt", "", "Çar", "", "Cum", "", "Paz"]
+  for i in 7 {
+    if adlar[i] != "" {
+      p.fill("#8e8e93").text(adlar[i], 2, ustPay + i * (kutu + bosluk) + 10, 9, "left")
+    }
+  }
+  p.fill("#8e8e93").text("son ${hafta} hafta", solPay, 9, 9, "left")
+}
+
+yukle()
+
+# ------------------------------------------------------------- görünüm
+
+view {
+  HStack(spacing: 0, grow: true) {
+
+    VStack(spacing: 0, width: 230) {
+      HStack(spacing: 6, padding: 10) {
+        TextField(yeniAd, placeholder: "Yeni alışkanlık", bind: "yeniAd",
+                  grow: true, onSubmit: ekle)
+        Button("", icon: "plus", variant: "tinted", onClick: ekle)
+      }
+      Divider()
+
+      ScrollView(grow: true) {
+        VStack(spacing: 3, padding: 8) {
+          if len(aliskanliklar) == 0 {
+            Empty("Henüz alışkanlık yok", glyph: "check")
+          }
+          for a in aliskanliklar {
+            HStack(spacing: 8, padding: 6, radius: 8,
+                   background: a.id == secili ? "var(--hairline-soft)" : "transparent") {
+              Button("", icon: a.yapildiMi(bugun()) ? "check" : "circle",
+                     variant: a.yapildiMi(bugun()) ? "primary" : "ghost",
+                     onClick: fn() { isaretle(a, bugun()) })
+              VStack(spacing: 0, grow: true) {
+                Label(a.ad, weight: 560)
+                Caption("${a.seri()} günlük seri")
+              }
+            }
+          }
+        }
+      }
+
+      Divider()
+      HStack(spacing: 6, padding: 9) {
+        Caption("Bugün ${bugunYapilan()}/${len(aliskanliklar)}")
+        Spacer()
+      }
+    }
+
+    Divider()
+
+    VStack(spacing: 0, grow: true) {
+      if is_nil(secili) {
+        VStack(spacing: 10, grow: true, justify: "center", align: "center") {
+          Empty("Soldan bir alışkanlık seçin", glyph: "check")
+        }
+      } else {
+        HStack(spacing: 8, padding: 12) {
+          Label(seciliAliskanlik()?.ad ?? "", style: "headline")
+          Spacer()
+          Button("", icon: "trash", variant: "ghost",
+                 onClick: fn() { sil(seciliAliskanlik()) })
+        }
+        Divider()
+
+        ScrollView(grow: true) {
+          VStack(spacing: 14, padding: 16) {
+            HStack(spacing: 10) {
+              Card("Seri") { Label("${seciliAliskanlik()?.seri() ?? 0}", style: "title", tint: true) }
+              Card("Son 30 gün") { Label("${seciliAliskanlik()?.sonNGun(30) ?? 0}", style: "title") }
+              Card("Oran") {
+                Label("%${format(((seciliAliskanlik()?.sonNGun(30) ?? 0) / 30) * 100, 0)}",
+                      style: "title")
+              }
+            }
+
+            Section("Geçmiş") {
+              Canvas(height: 130, draw: cizHarita)
+            }
+
+            Section("Son 14 gün") {
+              VStack(spacing: 4) {
+                for g in reverse(sonGunler(14)) {
+                  HStack(spacing: 10) {
+                    Label(g, font: 12, color: "var(--text-2)", grow: true)
+                    Button(seciliAliskanlik()?.yapildiMi(g) ? "Yapıldı" : "İşaretle",
+                           size: "sm",
+                           variant: seciliAliskanlik()?.yapildiMi(g) ? "tinted" : "ghost",
+                           onClick: fn() { isaretle(seciliAliskanlik(), g) })
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

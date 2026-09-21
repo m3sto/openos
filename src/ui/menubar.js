@@ -146,10 +146,21 @@ export class MenuBar {
     };
 
     if (settings.get('focus.dnd')) mk(icon('moon', 14), 'Rahatsız Etmeyin', () => this.os.openControlCenter());
-    mk(icon('bluetooth', 13), 'Bluetooth', () => this.os.openControlCenter())
-      .style.opacity = settings.get('network.bluetooth') ? '1' : '.4';
-    mk(icon(settings.get('network.wifi') ? 'wifi' : 'globe', 14), 'Wi-Fi', b => this.wifiMenu(b));
-    this.battery = mk(this.batteryHtml(), 'Pil', () => this.os.openControlCenter());
+
+    /* Bluetooth donanımı yok — kapalı ve etkisiz görünür. */
+    const bt = mk(icon('bluetooth', 13), 'Bluetooth — bu cihazda çalışmıyor', b => this.bluetoothMenu(b));
+    bt.style.opacity = '.35';
+
+    /* Ağ: kablolu bağlantı. */
+    const online = navigator.onLine;
+    mk(icon('ethernet', 14), online ? `Ethernet — bağlı (${settings.get('network.link')})` : 'Ethernet — bağlantı yok',
+      b => this.networkMenu(b)).style.opacity = online ? '1' : '.4';
+
+    this.battery = mk(this.batteryHtml(), this.batteryTitle(), () => this.os.openControlCenter());
+
+    this.notifBtn = mk(icon('bell', 14), 'Bildirimler', b => this.os.desktop?.toggleNotificationCenter(b));
+    this.syncNotifBadge();
+
     mk(icon('grid', 13), 'Kontrol Merkezi', () => this.os.openControlCenter());
     mk(icon('search', 14), 'Spotlight', () => this.os.toggleSpotlight());
     this.clock = h('div.status.clock');
@@ -158,38 +169,86 @@ export class MenuBar {
     this.updateClock();
   }
 
-  batteryHtml() {
-    const lvl = this.os.battery?.level ?? 0.92;
-    const w = Math.round(14 * lvl);
-    const col = lvl < 0.2 ? '#ff453a' : 'currentColor';
-    return `<svg width="24" height="13" viewBox="0 0 24 13" fill="none">
-      <rect x=".6" y=".6" width="19" height="11.8" rx="3.4" stroke="currentColor" stroke-width="1.1" opacity=".5"/>
-      <rect x="2.2" y="2.2" width="${w}" height="8.6" rx="2" fill="${col}"/>
-      <path d="M21.4 4.4v3.6c1.1-.3 1.6-.9 1.6-1.8s-.5-1.5-1.6-1.8z" fill="currentColor" opacity=".5"/>
-    </svg>`;
+  /** Okunmamış bildirim varsa çan üzerinde nokta gösterir. */
+  syncNotifBadge() {
+    if (!this.notifBtn) return;
+    const n = this.os.notify.history.filter(x => !x.seen).length;
+    this.notifBtn.classList.toggle('has-badge', n > 0);
+    this.notifBtn.dataset.count = n > 9 ? '9+' : String(n || '');
   }
 
-  wifiMenu(anchor) {
-    const on = settings.get('network.wifi');
+  batteryTitle() {
+    const b = this.os.battery || {};
+    if (!b.present) return 'Prize takılı — bu cihazda batarya yok';
+    const pct = Math.round((b.level ?? 1) * 100);
+    if (b.charging) return `Pil %${pct} — şarj oluyor`;
+    const t = b.dischargingTime;
+    const left = (t && isFinite(t)) ? ` · ${Math.floor(t / 3600)}s ${Math.round((t % 3600) / 60)}dk kaldı` : '';
+    return `Pil %${pct}${left}`;
+  }
+
+  networkMenu(anchor) {
+    const online = navigator.onLine;
     menu([
-      { header: 'Wi-Fi' },
-      { label: on ? 'Wi-Fi Açık' : 'Wi-Fi Kapalı', checked: on, run: () => { settings.set('network.wifi', !on); this.renderRight(); } },
+      { header: 'Ağ' },
+      { label: online ? `Ethernet — bağlı` : 'Ethernet — bağlantı yok', glyph: 'ethernet', checked: online, run: () => {} },
+      { label: `Bağlantı hızı: ${settings.get('network.link')}`, disabled: true },
+      { label: `Durum: ${online ? 'çevrimiçi' : 'çevrimdışı'}`, disabled: true },
       '-',
-      ...(on ? [
-        { label: settings.get('network.ssid'), checked: true, glyph: 'wifi', run: () => {} },
-        { label: 'OpenOS-Guest', glyph: 'wifi', run: () => settings.set('network.ssid', 'OpenOS-Guest') },
-        { label: 'sanal-ag-5G', glyph: 'wifi', run: () => settings.set('network.ssid', 'sanal-ag-5G') },
-      ] : [{ label: 'Ağ yok', disabled: true }]),
+      { label: 'Wi-Fi — bu cihazda yok', glyph: 'wifi', disabled: true },
       '-',
       { label: 'Ağ Ayarları…', glyph: 'settings', run: () => this.os.openApp('settings', { pane: 'network' }) },
     ], { anchor });
+  }
+
+  bluetoothMenu(anchor) {
+    menu([
+      { header: 'Bluetooth' },
+      { label: 'Bu cihazda çalışmıyor', glyph: 'bluetooth', disabled: true },
+      { label: 'Adaptör bulunamadı', disabled: true },
+      '-',
+      { label: 'Ağ Ayarları…', glyph: 'settings', run: () => this.os.openApp('settings', { pane: 'network' }) },
+    ], { anchor });
+  }
+
+  batteryHtml() {
+    const b = this.os.battery || { level: 1, charging: true, present: false };
+    if (!b.present) {
+      /* Batarya yok: fiş simgesi, sabit dolu gösterge. */
+      return `<span style="display:flex;align-items:center;gap:3px">${icon('plug', 13)}</span>`;
+    }
+    const lvl = b.level ?? 1;
+    const w = Math.max(1, Math.round(15.6 * lvl));
+    const col = lvl <= 0.1 ? '#ff453a' : lvl <= 0.2 ? '#ff9f0a' : 'currentColor';
+    const bolt = b.charging
+      ? '<path d="M11.6 2.6 8.2 7.2h2.4l-.6 3.6 3.4-4.6h-2.4z" fill="#000" stroke="#fff" stroke-width=".7"/>'
+      : '';
+    return `<svg width="26" height="13" viewBox="0 0 26 13" fill="none">
+      <rect x=".6" y=".6" width="21" height="11.8" rx="3.4" stroke="currentColor" stroke-width="1.1" opacity=".5"/>
+      <rect x="2.2" y="2.2" width="${w}" height="8.6" rx="2" fill="${col}"/>
+      <path d="M23.4 4.4v3.6c1.1-.3 1.6-.9 1.6-1.8s-.5-1.5-1.6-1.8z" fill="currentColor" opacity=".5"/>
+      <g transform="translate(5 1)">${bolt}</g>
+    </svg>`;
   }
 
   updateClock() {
     if (!this.clock) return;
     const d = new Date();
     const h12 = settings.get('h12');
-    this.clock.textContent = `${fmtDate(d, settings.get('locale'))} ${fmtTime(d, { h12, locale: settings.get('locale') })}`;
-    if (this.battery && this.os.battery) this.battery.innerHTML = this.batteryHtml();
+    /* Tarih ve saat ayrı düğümler: dar ekranda tarih CSS ile düşürülüp
+       saat korunabilsin. Tek metin olduğunda ikisi birlikte kırpılıyordu. */
+    if (!this.clockDate) {
+      this.clock.textContent = '';
+      this.clockDate = h('span.mb-date');
+      this.clockTime = h('span.mb-time');
+      this.clock.append(this.clockDate, this.clockTime);
+    }
+    this.clockDate.textContent = fmtDate(d, settings.get('locale')) + ' ';
+    this.clockTime.textContent = fmtTime(d, { h12, locale: settings.get('locale') });
+    if (this.battery && this.os.battery) {
+      this.battery.innerHTML = this.batteryHtml();
+      this.battery.title = this.batteryTitle();
+    }
+    this.syncNotifBadge();
   }
 }

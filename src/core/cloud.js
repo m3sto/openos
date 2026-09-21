@@ -57,7 +57,8 @@ export class Cloud {
     });
     const text = await res.text();
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    try { data = text ? JSON.parse(text) : null; }
+    catch { data = { raw: text, error: `Sunucu JSON değil, ${(res.headers.get('content-type') || '?')} döndü` }; }
     if (!res.ok) throw new Error(data?.error || data?.message || `Cloud ${res.status}`);
     return data;
   }
@@ -149,8 +150,15 @@ export class Cloud {
   async fetchSource(entry) {
     if (entry.builtin) return entry.src();
     if (this.source === 'cloud') {
-      const r = await this.api(`/v1/apps/${encodeURIComponent(entry.id)}/source`);
-      return typeof r === 'string' ? r : (r.source || '');
+      /* Kaynak düz metin döner; JSON bekleyen api() yolundan geçirilemez. */
+      const res = await fetch(`${this.endpoint}/v1/apps/${encodeURIComponent(entry.id)}/source`, {
+        headers: this.session?.token ? { Authorization: `Bearer ${this.session.token}` } : {},
+        cache: 'no-cache',
+      });
+      if (!res.ok) throw new Error(`Kaynak indirilemedi (${res.status})`);
+      const text = await res.text();
+      if (!text.trim()) throw new Error('Kaynak boş döndü');
+      return text;
     }
     const url = /^https?:/.test(entry.source || '') ? entry.source : this.rawUrl(entry.source || `apps/${entry.id}/app.osh`);
     const res = await fetch(url, { cache: 'no-cache' });
@@ -245,7 +253,10 @@ export class Cloud {
 
   status() {
     return {
-      mode: this.source,
+      /* `source` katalogun nereden geldiğini söyler; oturum açıkken henüz
+         katalog çekilmediyse "çevrimdışı" yazıyordu ve kullanıcı bağlı
+         olmadığını sanıyordu. Oturum varsa bulut bağlantısı da vardır. */
+      mode: this.source === 'offline' && this.signedIn && this.hasApi ? 'cloud' : this.source,
       api: this.hasApi ? this.endpoint : null,
       repo: this.hasRepo ? `${this.repo}@${this.branch}` : null,
       signedIn: this.signedIn,

@@ -1,0 +1,121 @@
+/* ==========================================================================
+   OpenOS · graphics.css — Grafik İşletici'nin sisteme dokunduğu yer
+   Uygulama yalnızca kök sınıfları değiştirir; asıl kazanç burada olur.
+   Bulanıklık ve gölge, tarayıcıda en pahalı iki iştir: ikisini kapatmak
+   düşük donanımda kare hızını görünür biçimde yükseltir.
+   ========================================================================== */
+
+/* ---------- bulanıklık ---------- */
+html.gfx-blur-low .blur,
+html.gfx-blur-low .blur-lg,
+html.gfx-blur-low .blur-sm,
+html.gfx-blur-low .menubar,
+html.gfx-blur-low .dock,
+html.gfx-blur-low .k-menu,
+html.gfx-blur-low .win-bar,
+html.gfx-blur-low .sidebar,
+html.gfx-blur-low .ob-side,
+html.gfx-blur-low .widget,
+html.gfx-blur-low .notif,
+html.gfx-blur-low .notif-center,
+html.gfx-blur-low .control-center,
+html.gfx-blur-low .spotlight,
+html.gfx-blur-low .launchpad,
+html.gfx-blur-low .mission,
+html.gfx-blur-low .ide-pal,
+html.gfx-blur-low .ide-complete,
+html.gfx-blur-low .k-alert,
+html.gfx-blur-low .ob-suggest {
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+html.gfx-blur-off .blur,
+html.gfx-blur-off .blur-lg,
+html.gfx-blur-off .blur-sm,
+html.gfx-blur-off .menubar,
+html.gfx-blur-off .dock,
+html.gfx-blur-off .k-menu,
+html.gfx-blur-off .win-bar,
+html.gfx-blur-off .sidebar,
+html.gfx-blur-off .ob-side,
+html.gfx-blur-off .widget,
+html.gfx-blur-off .notif,
+html.gfx-blur-off .notif-center,
+html.gfx-blur-off .control-center,
+html.gfx-blur-off .spotlight,
+html.gfx-blur-off .launchpad,
+html.gfx-blur-off .mission,
+html.gfx-blur-off .ide-pal,
+html.gfx-blur-off .ide-complete,
+html.gfx-blur-off .k-alert,
+html.gfx-blur-off .ob-suggest {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Bulanıklık kalkınca cam yüzeyler okunmaz olmasın diye opaklaştırılır. */
+html.gfx-blur-off,
+html.gfx-opaque {
+  --glass: var(--surface);
+  --glass-strong: var(--surface);
+  --glass-dim: var(--surface-2);
+  --chrome: var(--surface-2);
+}
+
+/* ---------- gölgeler ---------- */
+html.gfx-shadow-flat {
+  --sh-1: 0 0 0 .5px var(--hairline-soft);
+  --sh-2: 0 1px 3px rgba(0,0,0,.14);
+  --sh-3: 0 2px 6px rgba(0,0,0,.20);
+  --sh-win: 0 3px 10px rgba(0,0,0,.28), 0 0 0 .5px rgba(0,0,0,.2);
+  --sh-win-blur: 0 2px 6px rgba(0,0,0,.18);
+  --sh-pop: 0 3px 10px rgba(0,0,0,.24);
+}
+html.gfx-shadow-off {
+  --sh-1: none; --sh-2: none; --sh-3: none;
+  --sh-win: 0 0 0 .5px var(--hairline); --sh-win-blur: 0 0 0 .5px var(--hairline);
+  --sh-pop: 0 0 0 .5px var(--hairline);
+}
+html.gfx-shadow-off .app-icon { box-shadow: none !important; }
+html.gfx-shadow-off .desk-icon .glyph { filter: none !important; }
+
+/* ---------- hareket ---------- */
+html.gfx-anim-fast { --t-fast: 80ms; --t: 130ms; --t-slow: 200ms; }
+html.gfx-anim-off  { --t-fast: 1ms;  --t: 1ms;   --t-slow: 1ms; }
+html.gfx-anim-off *,
+html.gfx-anim-off *::before,
+html.gfx-anim-off *::after {
+  animation-duration: 1ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 1ms !important;
+}
+
+/* ---------- yalın mod: katman sayısını düşürür ---------- */
+html.gfx-shadow-off .wallpaper.tinted::after { display: none; }
+
+/* --------------------------------------------------------------------------
+   Gölgeyi yalnızca token üzerinden kısmak yetmiyor: box-shadow'u var() ile
+   kuran kurallar (özellikle .win.jelly.focused gibi çok katmanlı olanlar)
+   eski değeri vermeye devam edebiliyor. Bu yüzden tüketici kurallar burada
+   doğrudan eziliyor — sonuç tarayıcıdan bağımsız olarak kesin.
+   -------------------------------------------------------------------------- */
+html.gfx-shadow-flat .win,
+html.gfx-shadow-flat .win.focused,
+html.gfx-shadow-flat .win.jelly.focused {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .28), 0 0 0 .5px var(--hairline) !important;
+}
+html.gfx-shadow-off .win,
+html.gfx-shadow-off .win.focused,
+html.gfx-shadow-off .win.jelly.focused {
+  box-shadow: 0 0 0 .5px var(--hairline) !important;
+}
+html.gfx-shadow-off .k-card,
+html.gfx-shadow-off .k-group,
+html.gfx-shadow-off .widget,
+html.gfx-shadow-off .dock,
+html.gfx-shadow-off .k-menu,
+html.gfx-shadow-off .notif,
+html.gfx-shadow-off .notif-center,
+html.gfx-shadow-off .control-center,
+html.gfx-shadow-off .spotlight { box-shadow: 0 0 0 .5px var(--hairline) !important; }

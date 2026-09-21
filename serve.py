@@ -31,7 +31,10 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    # Ortamdaki PORT, harness'ın atadığı bağlantı noktasını verir; komut
+    # satırı argümanı onu ezer, ikisi de yoksa 8080'e düşülür.
+    import os
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get('PORT') or 8080)
     handler = partial(NoCacheHandler, directory='.')
     print(f'OpenOS  site →  http://localhost:{port}/')
     print(f'OpenOS   os  →  http://localhost:{port}/os/     (önbellek kapalı)')

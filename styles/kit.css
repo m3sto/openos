@@ -28,7 +28,18 @@
 .k-zstack > * { grid-area: 1 / 1; }
 .k-spacer { flex: 1 1 auto; }
 .k-grid   { display: grid; gap: 12px; }
-.k-scroll { overflow: auto; -webkit-overflow-scrolling: touch; }
+/* Sınıf bilerek iki kez yazılır. `.k-scroll` bir *niyet* beyanıdır: bu alan
+   kaydırılsın. Tek sınıfla yazıldığında, sonradan yüklenen bir sayfadaki eşit
+   ağırlıklı `.content { overflow: hidden }` gibi bir kural onu kaynak sırasıyla
+   eziyor ve taşan içerik sessizce kırpılıyordu. */
+.k-scroll.k-scroll  { overflow: auto; -webkit-overflow-scrolling: touch; }
+/* Kaydırılan bir sütunda çocuklar asla ezilmemeli. Esnek yerleşimin
+   varsayılanı `flex-shrink: 1`: yer daralınca kartlar kaydırmayı tetiklemek
+   yerine sessizce küçülür ve `overflow: hidden` taşan kısmı yutar — içerik
+   hiçbir uyarı vermeden kaybolur. Taşmak burada doğru davranış. */
+.k-scroll.k-scroll > * { flex-shrink: 0; }
+.k-scroll.k-scroll.y { overflow-x: hidden; overflow-y: auto; }
+.k-scroll.k-scroll.x { overflow-x: auto; overflow-y: hidden; }
 .k-wrap   { flex-wrap: wrap; }
 
 /* ---------- button ---------- */
@@ -153,6 +164,7 @@
 }
 .k-group {
   background: var(--surface); border-radius: var(--r-md); overflow: hidden;
+  flex-shrink: 0;
   box-shadow: var(--sh-1), 0 0 0 .5px var(--hairline-soft);
 }
 .k-group > .k-row + .k-row { border-top: .5px solid var(--hairline-soft); }
@@ -177,7 +189,7 @@
 .k-list { display: flex; flex-direction: column; }
 .k-list .item {
   display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: var(--r-sm);
-  cursor: default; transition: background var(--t-fast);
+  cursor: inherit; transition: background var(--t-fast);
 }
 .k-list .item:hover { background: var(--hairline-soft); }
 .k-list .item.sel  { background: var(--accent); color: var(--accent-fg); }
@@ -227,7 +239,7 @@
 }
 .k-menu .mi {
   display: flex; align-items: center; gap: 9px; height: 26px; padding: 0 9px;
-  border-radius: 6px; cursor: default; white-space: nowrap;
+  border-radius: 6px; cursor: inherit; white-space: nowrap;
 }
 .k-menu .mi:hover:not(.disabled):not(.sep) { background: var(--accent); color: var(--accent-fg); }
 .k-menu .mi.disabled { opacity: .4; }
@@ -263,3 +275,317 @@
 .app-icon.png { background: none !important; box-shadow: none !important; }
 .app-icon.png::after { display: none !important; }
 .app-icon.png img { filter: drop-shadow(0 3px 6px rgba(0,0,0,.22)); }
+
+/* ---------- sistem kaydırıcısı ----------
+   Yerleşik kaydırma çubuğu her platformda başka görünür ve içerikten yer
+   çalar. Buradaki çubuk içeriğin üstünde durur, boştayken söner, imleç
+   yaklaşınca kalınlaşır. Çizimi tek bir `transform` ile yapılır. */
+.os-scroll-host {
+  position: relative;
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+  /* Kabuk hiçbir koşulda çapraz eksende çökmemeli. `align-self: auto`
+     kaldığında yüksekliği ebeveynin `align-items` değerine kalıyor; o
+     değer `stretch` değilse kabuk içeriğine, içerideki `min-height: 0`
+     olan gövde de sıfıra iniyor ve uygulamanın içerik bölmesi boş
+     görünüyor — pencere çerçevesi yerinde dururken. */
+  align-self: stretch;
+}
+/* Kabuk esnek bir satırın içindeyse yeri korunmalı: `flex` kopyalanırken
+   `0 1 auto` gelen bir değer, kabuğu içerik genişliğine düşürebiliyor. */
+.app-shell > .os-scroll-host { flex: 1 1 0%; min-height: 0; }
+.os-scroll-host > .os-scroll-body {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  margin: 0; max-height: none;
+}
+/* Yerleşik çubuk tamamen susturulur — yerini sistemin çubuğu alır. */
+.os-scroll-body { scrollbar-width: none; }
+.os-scroll-body::-webkit-scrollbar { width: 0; height: 0; }
+
+.os-sb {
+  position: absolute; z-index: 5;
+  opacity: 0; pointer-events: none;
+  transition: opacity .28s var(--ease), width .14s var(--ease), height .14s var(--ease);
+}
+.os-sb.y { top: 2px; bottom: 2px; right: 2px; width: 7px; }
+.os-sb.x { left: 2px; right: 2px; bottom: 2px; height: 7px; }
+.os-scroll-host.iki-eksen > .os-sb.y { bottom: 13px; }
+.os-scroll-host.iki-eksen > .os-sb.x { right: 13px; }
+
+.os-scroll-host.gorunur > .os-sb { opacity: 1; pointer-events: auto; }
+.os-scroll-host.gorunur > .os-sb:hover,
+.os-sb.tutuluyor { width: 11px; }
+.os-sb.x.tutuluyor, .os-scroll-host.gorunur > .os-sb.x:hover { width: auto; height: 11px; }
+
+.os-sb-thumb {
+  position: absolute; top: 0; left: 0;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--text-2) 42%, transparent);
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.22);
+  transition: background var(--t-fast) var(--ease);
+}
+.os-sb.y .os-sb-thumb { width: 100%; }
+.os-sb.x .os-sb-thumb { height: 100%; }
+.os-sb:hover .os-sb-thumb { background: color-mix(in srgb, var(--text-2) 62%, transparent); }
+.os-sb.tutuluyor .os-sb-thumb { background: color-mix(in srgb, var(--text) 72%, transparent); }
+
+/* ---------- sistem metin kutusu ---------- */
+.k-textfield { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.k-field-label {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
+  color: var(--text-2); padding-left: 2px;
+}
+.k-field-ic { flex: 0 0 auto; display: flex; color: var(--text-3); }
+.k-field:focus-within .k-field-ic { color: var(--accent); }
+.k-field-suffix { flex: 0 0 auto; font-size: 12px; color: var(--text-3); }
+.k-field-clear {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: color-mix(in srgb, var(--text-3) 32%, transparent);
+  color: var(--surface); opacity: .85;
+  transition: opacity var(--t-fast), background var(--t-fast);
+}
+.k-field-clear:hover { opacity: 1; background: var(--text-3); }
+.k-field-help { font-size: 11.5px; color: var(--text-3); padding-left: 2px; line-height: 1.35; }
+.k-field-help.hata { color: var(--red); }
+.k-field-count {
+  align-self: flex-end; font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.k-field-count.dolu { color: var(--red); font-weight: 600; }
+
+/* Geçersiz durum: kenarlık ve halka kırmızıya döner, alan bir kez titrer. */
+.k-textfield.gecersiz .k-field { border-color: var(--red); }
+.k-textfield.gecersiz .k-field:focus-within {
+  box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--red) 22%, transparent);
+}
+.k-textfield.gecersiz .k-field { animation: k-field-shake .32s var(--ease); }
+@keyframes k-field-shake {
+  10%, 90% { transform: translateX(-1.5px); }
+  30%, 70% { transform: translateX(2.5px); }
+  50%      { transform: translateX(-2.5px); }
+}
+
+/* ---------- dosya kutusu (Aç / Kaydet) ---------- */
+.fd-scrim { z-index: 7000; place-items: center; }
+.fd-scrim.kapaniyor { animation: os-fade-out .16s var(--ease-in) forwards; }
+@keyframes os-fade-out { to { opacity: 0; } }
+
+.fd {
+  width: min(660px, 94%); height: min(470px, 88%);
+  display: flex; flex-direction: column;
+  border-radius: var(--r-lg); overflow: hidden;
+  background: var(--glass-strong);
+  backdrop-filter: blur(40px) saturate(190%);
+  -webkit-backdrop-filter: blur(40px) saturate(190%);
+  box-shadow: var(--sh-pop);
+  animation: fd-in .26s var(--spring-soft);
+}
+/* macOS'taki sayfa gibi yukarıdan iner. */
+@keyframes fd-in { from { opacity: 0; transform: translateY(-14px) scale(.985); } }
+
+.fd-bar {
+  flex: 0 0 auto; height: 42px; display: flex; align-items: center; gap: 4px;
+  padding: 0 9px; box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+}
+.fd-title { font-size: 13px; font-weight: 620; margin-left: 6px; }
+
+.fd-body { flex: 1; min-height: 0; display: flex; }
+.fd-side {
+  width: 156px; flex: 0 0 auto; padding: 8px 7px;
+  display: flex; flex-direction: column; gap: 1px;
+  box-shadow: inset -.5px 0 0 var(--hairline-soft);
+}
+.fd-fav {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: var(--r-xs);
+  font-size: 12.5px; color: var(--text); cursor: inherit;
+}
+.fd-fav span:first-child { color: var(--accent); display: flex; }
+.fd-fav:hover { background: var(--hairline-soft); }
+
+.fd-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fd-path {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 3px;
+  padding: 6px 11px; font-size: 11.5px; color: var(--text-2);
+  box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+  overflow-x: auto; scrollbar-width: none; white-space: nowrap;
+}
+.fd-path::-webkit-scrollbar { display: none; }
+.fd-crumb { padding: 2px 5px; border-radius: var(--r-xs); display: flex; align-items: center; }
+.fd-crumb:hover { background: var(--hairline-soft); color: var(--text); }
+.fd-crumb.son { font-weight: 600; color: var(--text); }
+.fd-sep { opacity: .4; display: flex; }
+
+.fd-list { flex: 1; min-height: 0; padding: 4px 6px; }
+.fd-item {
+  display: grid; grid-template-columns: 20px 1fr 78px 92px;
+  align-items: center; gap: 8px;
+  padding: 5px 7px; border-radius: var(--r-xs);
+  font-size: 12.5px; cursor: inherit; user-select: none;
+}
+.fd-item:hover { background: var(--hairline-soft); }
+.fd-item.secili { background: var(--accent); color: var(--accent-fg); }
+.fd-item.secili .fd-boy, .fd-item.secili .fd-tarih { color: inherit; opacity: .8; }
+.fd-ic { display: flex; color: var(--accent); }
+.fd-item.secili .fd-ic { color: inherit; }
+.fd-ad { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-item.klasor .fd-ad { font-weight: 560; }
+.fd-boy, .fd-tarih {
+  font-size: 11px; color: var(--text-3); text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.fd-bos { padding: 34px 0; text-align: center; font-size: 12.5px; color: var(--text-3); }
+.fd-status {
+  flex: 0 0 auto; padding: 5px 11px; font-size: 11px; color: var(--text-3);
+  box-shadow: inset 0 .5px 0 var(--hairline-soft);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.fd-save {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 9px;
+  padding: 9px 12px; box-shadow: inset 0 .5px 0 var(--hairline-soft);
+}
+.fd-name { flex: 1; min-width: 0; background: none; border: 0; outline: none; font-size: 13px; }
+.fd-foot {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; box-shadow: inset 0 .5px 0 var(--hairline-soft);
+}
+
+/* İçerik ağırlıklı kutu. `k-alert` camdır ve küçük bir uyarı için doğrudur;
+   satır satır denetim taşıyan bir panelde arkadaki içerik okunurluğu
+   bozuyor. Bu türevi düz zemin kullanır. */
+.k-alert.k-sheet {
+  background: var(--surface);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  box-shadow: var(--sh-pop), 0 0 0 .5px var(--hairline);
+}
+.k-alert.k-sheet .k-group { background: var(--surface-2); }
+
+/* ==========================================================================
+   OpenSharp arayüz öğeleri
+
+   Dilin yeni denetimleri. Ayrı bir görsel dil kurulmuyor: hepsi sistemin
+   kendi değişkenlerini kullanıyor, çünkü OpenSharp ile yazılan bir uygulama
+   yerli uygulamalardan ayırt edilememeli.
+   ========================================================================== */
+
+/* ---- Table ---- */
+.osh-table {
+  display: flex; flex-direction: column; border-radius: var(--r-md); overflow: hidden;
+  background: var(--surface-2); box-shadow: inset 0 0 0 .5px var(--hairline);
+}
+.osh-tr {
+  display: grid; gap: 10px; padding: 8px 12px; align-items: center;
+  font-size: 12.5px; box-shadow: inset 0 -.5px 0 var(--hairline-soft);
+}
+.osh-tr > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.osh-tr:last-child { box-shadow: none; }
+.osh-th {
+  font-size: 11px; font-weight: 640; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .04em;
+  background: color-mix(in srgb, var(--text-3) 8%, transparent);
+}
+.osh-tr.tiklanir { cursor: inherit; transition: background var(--t-fast); }
+.osh-tr.tiklanir:hover { background: var(--hairline-soft); }
+.osh-table-bos { padding: 22px; text-align: center; color: var(--text-3); font-size: 12.5px; }
+
+/* ---- SearchField ---- */
+.osh-search { display: flex; align-items: center; gap: 7px; }
+.osh-search .ic { color: var(--text-3); flex: 0 0 auto; display: grid; place-items: center; }
+.osh-search input { flex: 1; min-width: 0; background: none; border: 0; outline: none;
+  color: var(--text); font: inherit; font-size: 13px; }
+.osh-search input::-webkit-search-cancel-button { filter: grayscale(1) opacity(.5); }
+
+/* ---- Stepper ---- */
+.osh-stepper {
+  display: inline-flex; align-items: center; border-radius: var(--r-sm); overflow: hidden;
+  background: var(--surface-2); box-shadow: inset 0 0 0 .5px var(--hairline);
+}
+.osh-stepper button {
+  width: 28px; height: 28px; font-size: 15px; color: var(--text-2); cursor: inherit;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.osh-stepper button:hover { background: var(--hairline-soft); color: var(--text); }
+.osh-stepper-giris {
+  width: 52px; text-align: center; background: none; border: 0; outline: none;
+  color: var(--text); font: inherit; font-size: 12.5px;
+  box-shadow: inset 1px 0 0 var(--hairline-soft), inset -1px 0 0 var(--hairline-soft);
+  height: 28px;
+}
+
+/* ---- ColorPicker ---- */
+.osh-renk {
+  width: 34px; height: 26px; padding: 0; border: 0; border-radius: var(--r-sm);
+  background: none; cursor: inherit;
+}
+.osh-renk::-webkit-color-swatch-wrapper { padding: 2px; }
+.osh-renk::-webkit-color-swatch { border: .5px solid var(--hairline); border-radius: 5px; }
+
+/* ---- Disclosure ---- */
+.osh-disc { display: flex; flex-direction: column; }
+.osh-disc-bas {
+  display: flex; align-items: center; gap: 7px; padding: 7px 4px;
+  font-size: 13px; font-weight: 550; color: var(--text); text-align: left; cursor: inherit;
+}
+.osh-disc-bas:hover { color: var(--accent); }
+.osh-ok { display: grid; place-items: center; color: var(--text-3); transition: transform .18s var(--ease); }
+.osh-disc-govde { padding: 2px 4px 8px 22px; display: flex; flex-direction: column; gap: 8px; }
+
+/* ---- Chip ---- */
+.osh-chip {
+  display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 540; background: var(--surface-2); color: var(--text-2);
+  box-shadow: inset 0 0 0 .5px var(--hairline);
+}
+.osh-chip.tiklanir { cursor: inherit; transition: background var(--t-fast); }
+.osh-chip.tiklanir:hover { background: var(--hairline-soft); color: var(--text); }
+
+/* ---- Alert ---- */
+.osh-alert {
+  display: flex; gap: 10px; align-items: flex-start; padding: 11px 13px;
+  border-radius: var(--r-md); font-size: 12.5px; line-height: 1.55;
+  background: color-mix(in srgb, var(--blue, #0a84ff) 11%, transparent);
+  box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--blue, #0a84ff) 30%, transparent);
+  color: var(--text);
+}
+.osh-alert .ic { flex: 0 0 auto; color: var(--blue, #0a84ff); display: grid; place-items: center; }
+.osh-alert-bas { font-weight: 600; margin-bottom: 2px; }
+.osh-alert-govde { flex: 1; min-width: 0; }
+.osh-alert[data-tur="success"] {
+  background: color-mix(in srgb, var(--green, #30d158) 11%, transparent);
+  box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--green, #30d158) 30%, transparent);
+}
+.osh-alert[data-tur="success"] .ic { color: var(--green, #30d158); }
+.osh-alert[data-tur="warning"] {
+  background: color-mix(in srgb, var(--orange, #ff9f0a) 12%, transparent);
+  box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--orange, #ff9f0a) 32%, transparent);
+}
+.osh-alert[data-tur="warning"] .ic { color: var(--orange, #ff9f0a); }
+.osh-alert[data-tur="error"] {
+  background: color-mix(in srgb, var(--red, #ff453a) 12%, transparent);
+  box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--red, #ff453a) 32%, transparent);
+}
+.osh-alert[data-tur="error"] .ic { color: var(--red, #ff453a); }
+
+/* ---- Dialog ---- */
+.osh-dialog-perde {
+  position: absolute; inset: 0; z-index: 40; display: grid; place-items: center;
+  background: rgba(0, 0, 0, .3); backdrop-filter: blur(3px);
+  animation: os-fade-in .16s var(--ease);
+}
+.osh-dialog {
+  width: min(420px, calc(100% - 40px)); max-height: calc(100% - 48px); overflow: auto;
+  background: var(--surface); border-radius: var(--r-lg); padding: 18px;
+  box-shadow: var(--sh-pop); animation: os-pop-in .2s var(--spring-soft);
+}
+.osh-dialog-bas { font-size: 15px; font-weight: 640; margin-bottom: 12px; }
+.osh-dialog-govde { display: flex; flex-direction: column; gap: 10px; }
+
+/* ---- Link ---- */
+.osh-link {
+  color: var(--accent); font: inherit; text-align: left; cursor: inherit; padding: 0;
+  text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.osh-link:hover { text-decoration-color: var(--accent); }

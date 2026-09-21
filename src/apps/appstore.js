@@ -17,6 +17,7 @@ import cloud from '../core/cloud.js';
 import { GitHub } from '../core/github.js';
 import { parseAppHeader, slug } from '../core/kernel.js';
 import { BUILTIN_CATALOG } from './store-catalog.js';
+import { paketOku, paketMi } from '../lang/package.js';
 
 export default {
   id: 'appstore', name: 'App Store', glyph: 'package', tint: ['#0a84ff', '#5e5ce6'],
@@ -56,19 +57,94 @@ class Store {
     this.render();
     this.refreshCatalog();
     this.off = cloud.bus.on('auth', () => { this.renderSidebar(); this.render(); });
-    ctx.win.onClosed = () => this.off?.();
+    this.agiIzle();
+    ctx.win.onClosed = () => {
+      this.off?.();
+      window.removeEventListener('online', this.agDinleyici);
+      window.removeEventListener('offline', this.agDinleyici);
+    };
   }
 
   /* ---------------- data ---------------- */
+  /**
+   * Kataloğu çevrimiçi tazeler. Üç sonuç ayrı ayrı ele alınır: ağ yok,
+   * ağ var ama sunucu yanıt vermedi, ve ağ yavaş. Üçünü "yerleşik katalog"
+   * diye tek bir sessiz duruma toplamak, kullanıcıya neyin yanlış
+   * gittiğini söylemiyordu.
+   */
   async refreshCatalog() {
     this.loading = true;
+    this.agHatasi = null;
     this.render();
+
+    if (navigator.onLine === false) {
+      this.remote = [];
+      this.agHatasi = { tur: 'offline' };
+      this.loading = false;
+      this.render();
+      return;
+    }
+
+    const basladi = performance.now();
     try {
       const cat = await cloud.loadCatalog({ force: true });
       this.remote = cat?.apps || [];
-    } catch { this.remote = []; }
+      if (!cat) this.agHatasi = { tur: 'sunucu', ileti: cloud.lastError };
+      this.yavasMi(performance.now() - basladi);
+    } catch (e) {
+      this.remote = [];
+      this.agHatasi = { tur: 'sunucu', ileti: e.message };
+    }
     this.loading = false;
     this.render();
+  }
+
+  /**
+   * Bağlantı yavaşsa kullanıcıya bir kez haber verilir. Her yenilemede
+   * yinelemek sinir bozucu olur; oturumda bir kez ve yalnızca üst üste
+   * yavaş ölçüm alındığında gösterilir.
+   */
+  yavasMi(sure) {
+    this.yavasSayac = sure > 3500 ? (this.yavasSayac || 0) + 1 : 0;
+    if (this.yavasSayac >= 2 && !this.yavasUyarildi) {
+      this.yavasUyarildi = true;
+      notify.post({
+        title: 'Bağlantınız yavaş',
+        body: 'Mağaza geç yanıt veriyor. Kurulumlar uzun sürebilir.',
+        glyph: 'wifi', timeout: 7000,
+      });
+    }
+  }
+
+  /** Ağ durumu değişince mağaza kendini tazeler — elle yenilemeye gerek yok. */
+  agiIzle() {
+    this.agDinleyici = () => {
+      if (navigator.onLine) { notify.toast('Bağlantı geri geldi', { glyph: '📶' }); this.refreshCatalog(); }
+      else { this.agHatasi = { tur: 'offline' }; this.render(); }
+    };
+    window.addEventListener('online', this.agDinleyici);
+    window.addEventListener('offline', this.agDinleyici);
+  }
+
+  /** Ağ yokken ya da sunucu yanıt vermezken gösterilen sayfa. */
+  cevrimdisiSayfasi() {
+    const offline = this.agHatasi?.tur === 'offline';
+    const yerlesik = BUILTIN_CATALOG.length;
+    return h('div.as-offline',
+      h('div.as-offline-glyph', { html: icon(offline ? 'wifiOff' : 'cloud', 32) }),
+      h('div.k-text.t-title2', { text: offline ? 'Çevrimdışısınız' : 'Mağazaya ulaşılamadı' }),
+      h('div.k-text.t-callout.as-offline-body', {
+        text: offline
+          ? 'OpenOS ağa ulaşamıyor. Bağlantınız geri geldiğinde mağaza kendiliğinden tazelenir.'
+          : `Sunucu yanıt vermedi${this.agHatasi?.ileti ? ` (${this.agHatasi.ileti})` : ''}. Birkaç dakika sonra yeniden deneyin.` }),
+      h('div.as-offline-note',
+        h('span', { html: icon('package', 14) }),
+        h('span', { text: `Sistemle gelen ${yerlesik} uygulama çevrimdışı da kurulabilir.` })),
+      h('div.k-hstack.as-offline-acts',
+        h('button.k-btn.v-primary.s-sm', { html: icon('refresh', 13), text: ' Yeniden dene',
+          onclick: () => this.refreshCatalog() }),
+        h('button.k-btn.s-sm', { html: icon('package', 13), text: ' Yerleşik uygulamalar',
+          onclick: () => { this.agHatasi = null; this.render(); } })));
   }
 
   /** Built-in entries plus whatever the cloud/GitHub catalogue returned. */
@@ -133,6 +209,9 @@ class Store {
 
   /* ---------------- panes ---------------- */
   p_discover() {
+    /* Ağ sorunu varsa önce onu söyle; yerleşik kataloğu görmek isteyen
+       düğmeye basar. Sessizce eksik liste göstermek yanıltıcıydı. */
+    if (this.agHatasi) { this.body.appendChild(this.cevrimdisiSayfasi()); return; }
     const st = cloud.status();
     this.body.append(
       h('div.as-hero',
@@ -222,6 +301,96 @@ class Store {
     box.appendChild(g);
   }
 
+  /**
+   * Kurulu bütün OpenSharp uygulamalarını tek işlemde yayınlar. Tek tek
+   * formu doldurmak, beş uygulaması olan biri için beş kez aynı işi yapmak
+   * demekti; manifest zaten her paketin içinde duruyor.
+   */
+  topluYayinlaBolumu() {
+    const st = cloud.status();
+    const kurulu = registry.all().filter(a => a.kind === 'opensharp' && a.packagePath);
+    if (!kurulu.length) return null;
+
+    const secim = new Set(kurulu.map(a => a.id));
+    const durum = h('div.k-text.t-caption');
+    const dugme = h('button.k-btn.v-primary.s-sm', {
+      html: icon('upload', 13), text: ` ${secim.size} uygulamayı yayınla` });
+
+    const satirlar = kurulu.map(a => {
+      const kutu = h('div.k-toggle', { dataset: { on: '1' } });
+      on(kutu, 'click', () => {
+        const acik = kutu.dataset.on !== '1';
+        kutu.dataset.on = acik ? '1' : '0';
+        if (acik) secim.add(a.id); else secim.delete(a.id);
+        dugme.textContent = ` ${secim.size} uygulamayı yayınla`;
+        dugme.prepend(h('span', { html: icon('upload', 13) }));
+        dugme.disabled = secim.size === 0;
+      });
+      return h('div.k-row',
+        h('span.ic', { style: { background: `linear-gradient(150deg, ${a.tint[0]}, ${a.tint[1]})`,
+                                color: '#fff' }, html: icon(a.glyph, 14) }),
+        h('div', { style: { flex: 1 } },
+          h('div.k-text', { text: a.name }),
+          h('div.k-text.t-caption', { text: `${a.id} · ${a.version || '1.0.0'}` })),
+        kutu);
+    });
+
+    on(dugme, 'click', async () => {
+      if (!st.signedIn && !st.github) {
+        notify.alert('Yayınlamak için önce OpenOS Cloud hesabınıza girin.',
+          { title: 'Oturum gerekli', glyph: '🔒' });
+        return;
+      }
+      dugme.disabled = true;
+      const hedefler = kurulu.filter(a => secim.has(a.id));
+      let basarili = 0;
+      const hatalar = [];
+
+      for (const a of hedefler) {
+        durum.textContent = `${a.name} yayınlanıyor… (${basarili + hatalar.length + 1}/${hedefler.length})`;
+        try {
+          const paket = paketOku(a.packagePath);
+          if (!paket) throw new Error('paket okunamadı');
+          await cloud.publish({
+            id: paket.manifest.id || a.id,
+            name: paket.manifest.name || a.name,
+            source: paket.kaynak,
+            manifest: {
+              summary: paket.manifest.about || '',
+              category: paket.manifest.category || 'Araç',
+              version: paket.manifest.version || '1.0.0',
+              icon: paket.manifest.icon || 'sparkles',
+              tint: paket.manifest.tint || a.tint,
+              author: st.signedIn ? st.user.handle : paket.manifest.author,
+              engine: 'opensharp-1', os: this.ctx.version,
+            },
+          });
+          basarili++;
+        } catch (e) {
+          hatalar.push(`${a.name}: ${e.message}`);
+        }
+      }
+
+      durum.textContent = hatalar.length
+        ? `${basarili} yayınlandı, ${hatalar.length} başarısız`
+        : `${basarili} uygulama yayınlandı`;
+      if (hatalar.length) {
+        notify.alert(hatalar.join('\n'), { title: 'Bazıları yayınlanamadı', glyph: '⚠️' });
+      } else {
+        notify.post({ title: 'Yayınlandı', body: `${basarili} uygulama mağazada`,
+                      glyph: 'package', tint: ['#0a84ff', '#5e5ce6'] });
+      }
+      await this.refreshCatalog();
+      dugme.disabled = false;
+    });
+
+    return h('div', { style: { marginTop: '8px' } },
+      h('div.k-sectitle', { text: 'Kurulu uygulamaları topluca yayınla' }),
+      h('div.k-group', ...satirlar),
+      h('div.k-hstack', { style: { gap: '10px', marginTop: '10px', alignItems: 'center' } },
+        dugme, durum));
+  }
+
   p_publish() {
     const st = cloud.status();
     this.body.append(
@@ -232,13 +401,33 @@ class Store {
 
     if (!st.signedIn && !st.github) {
       this.body.appendChild(this.signInPrompt('Yayınlamak için bir hedef bağlayın.'));
+      const onizleme = this.topluYayinlaBolumu();
+      if (onizleme) this.body.appendChild(onizleme);
       return;
     }
 
+    const toplu = this.topluYayinlaBolumu();
+    if (toplu) this.body.appendChild(toplu);
+
     /* --- source picker --- */
+    /* Kaynak yalnızca tek dosyalık `.osh` değil: paketlenmiş uygulamalar da
+       yayınlanabilmeli, yoksa Studio'da paketleyen kullanıcı mağazaya
+       gönderemiyor. Paketin giriş dosyası listeye girer. */
     let files = [];
-    try { files = vfs.list(VFS.join(vfs.home, 'Projeler')).filter(f => f.ext === 'osh'); } catch {}
-    try { files = files.concat(vfs.list('/Applications').filter(f => f.ext === 'osh')); } catch {}
+    const paketGirisleri = dizin => {
+      const cikti = [];
+      let ogeler = [];
+      try { ogeler = vfs.list(dizin); } catch { return cikti; }
+      for (const o of ogeler) {
+        if (o.type === 'file' && o.ext === 'osh') { cikti.push(o); continue; }
+        if (o.type === 'dir' && paketMi(o.path)) {
+          const p2 = paketOku(o.path);
+          if (p2) cikti.push({ ...vfs.stat(p2.girisYolu), paketYolu: o.path, manifest: p2.manifest });
+        }
+      }
+      return cikti;
+    };
+    files = [...paketGirisleri(VFS.join(vfs.home, 'Projeler')), ...paketGirisleri('/Applications')];
     if (!files.length) {
       this.body.appendChild(h('div.k-empty', h('div.glyph', { text: '📝' }),
         h('div.k-text.t-callout', { text: 'Projeler klasörünüzde .osh dosyası yok' }),
@@ -251,13 +440,20 @@ class Store {
       version: '1.0.0', icon: 'sparkles', tint: ['#5e5ce6', '#bf5af2'],
     };
     const applyHeader = () => {
+      const secilen = files.find(f => f.path === form.path);
       const src = vfs.read(form.path);
-      const meta = parseAppHeader(src);
+      /* Paketin manifesti kaynağın başlığından daha güvenilir: kullanıcı
+         Studio'da orada düzenlemiş oluyor. */
+      const meta = { ...parseAppHeader(src), ...(secilen?.manifest || {}) };
       form.name = meta.name || VFS.basename(form.path).replace(/\.osh$/, '');
-      form.id = slug(form.name);
+      form.id = meta.id || slug(form.name);
       form.icon = meta.icon || 'sparkles';
+      form.summary = meta.about || form.summary || '';
+      if (meta.version) form.version = meta.version;
       if (Array.isArray(meta.tint)) form.tint = meta.tint;
       nameF.value = form.name; idF.value = form.id;
+      sumF.value = form.summary;
+      verF.value = form.version || '1.0.0';
       preview.replaceChildren(previewCard(form));
     };
 
@@ -280,7 +476,7 @@ class Store {
     const row = (label, control) => h('div.k-row',
       h('div.k-text.t-secondary', { text: label, style: { width: '120px', flex: '0 0 auto' } }), control);
 
-    const target = st.signedIn ? `OpenOS Cloud (@${st.user.handle})` : `GitHub · ${cloud.repo}@${cloud.branch}`;
+    const target = st.signedIn ? `OpenOS Cloud (@${st.user.handle})` : 'GitHub hesabınız';
     const status = h('div.k-text.t-caption');
     const go = h('button.k-btn.v-primary.s-lg', { html: icon('upload', 14), text: ' Yayınla' });
 
@@ -352,31 +548,22 @@ class Store {
       this.body.appendChild(this.authForm());
     }
 
-    /* ---- endpoints ---- */
-    const endpointF = h('input', { value: settings.get('cloud.endpoint'), placeholder: 'https://openos-cloud.<hesap>.workers.dev' });
-    on(endpointF, 'change', () => { settings.set('cloud.endpoint', endpointF.value.trim()); cloud.catalog = null; this.render(); });
-    const repoF = h('input', { value: settings.get('cloud.repo'), placeholder: 'kullanici/openos-cloud' });
-    on(repoF, 'change', () => { settings.set('cloud.repo', repoF.value.trim()); cloud.catalog = null; this.refreshCatalog(); });
-    const branchF = h('input', { value: settings.get('cloud.branch'), style: { width: '100px' } });
-    on(branchF, 'change', () => settings.set('cloud.branch', branchF.value.trim() || 'main'));
-    const tokenF = h('input', { type: 'password', value: settings.get('cloud.token'), placeholder: 'github_pat_…' });
-    on(tokenF, 'change', () => { settings.set('cloud.token', tokenF.value.trim()); this.render(); });
-
+    /* Sunucu adresi, depo ve belirteç artık arayüzde yok: bunlar
+       uygulamanın kendi ayrıntılarıdır, kullanıcının ayarlayacağı şey değil. */
     this.body.append(
-      h('div.k-sectitle', { text: 'Bağlantılar' }),
+      h('div.k-sectitle', { text: 'Durum' }),
       h('div.k-group',
-        this.fieldRow('cloud', 'var(--teal)', 'Cloud API', 'Cloudflare Worker adresi', endpointF),
-        this.fieldRow('package', 'var(--purple)', 'GitHub deposu', 'Katalog ve uygulama kaynakları', repoF),
-        this.fieldRow('layers', 'var(--gray)', 'Dal', null, branchF),
-        this.fieldRow('lock', 'var(--red)', 'GitHub belirteci', 'Yalnızca bu tarayıcıda saklanır', tokenF)),
+        this.infoRow('cloud', 'var(--teal)', 'Mağaza',
+          ({ cloud: 'OpenOS Cloud’a bağlı', github: 'Yedek katalog', offline: 'Çevrimdışı — yerleşik katalog' })[st.mode]),
+        this.infoRow('package', 'var(--purple)', 'Katalog', `${this.catalog.length} uygulama`),
+        this.infoRow('upload', 'var(--orange)', 'Yayınlama',
+          st.signedIn ? 'hesabınızla açık' : 'giriş yapınca açılır')),
       h('div.k-hstack', { style: { gap: '8px', marginTop: '12px', flexWrap: 'wrap' } },
-        h('button.k-btn.s-sm', { html: icon('check', 13), text: ' Bağlantıyı sına', onclick: () => this.testConnection() }),
-        h('button.k-btn.s-sm', { html: icon('package', 13), text: ' Depoyu hazırla', onclick: () => this.initRepo() }),
-        h('button.k-btn.s-sm', { html: icon('refresh', 13), text: ' Katalogu yenile', onclick: () => this.refreshCatalog() }),
-        h('button.k-btn.v-ghost.s-sm', { html: icon('question', 13), text: ' Kurulum rehberi',
-          onclick: () => this.ctx.openApp('browser', { url: 'openos://about' }) })),
-      h('div.as-status', { text: statusText(st) }),
-      h('div.st-code', { text: SETUP_STEPS }));
+        h('button.k-btn.s-sm', { html: icon('refresh', 13), text: ' Katalogu yenile',
+          onclick: () => this.refreshCatalog() }),
+        h('button.k-btn.v-ghost.s-sm', { html: icon('globe', 13), text: ' Web panosu',
+          onclick: () => this.ctx.openApp('browser', { url: 'https://m3sto.github.io/openos-cloud/' }) })),
+    );
   }
 
   infoRow(glyph, tint, title, sub) {
@@ -438,35 +625,6 @@ class Store {
         h('div.k-row', h('div.k-text.t-secondary', { text: 'Şifre', style: { width: '120px' } }), h('div.k-field', pass)),
         handleRow),
       h('div.k-hstack', { style: { gap: '8px' } }, submit, toggle, h('div.k-spacer'), msg));
-  }
-
-  async testConnection() {
-    const lines = [];
-    if (cloud.hasApi) {
-      try { const r = await fetch(cloud.endpoint + '/v1/apps'); lines.push(`Cloud API: ${r.ok ? 'çalışıyor' : 'HTTP ' + r.status}`); }
-      catch (e) { lines.push('Cloud API: ulaşılamadı — ' + e.message); }
-    } else lines.push('Cloud API: tanımlı değil');
-
-    const gh = cloud.github();
-    if (gh.configured) {
-      try {
-        const me = await gh.whoami();
-        const info = await gh.repoInfo();
-        lines.push(`GitHub: @${me.login} · ${info.full} · yazma ${info.canPush ? 'var' : 'YOK'}`);
-      } catch (e) { lines.push('GitHub: ' + e.message); }
-    } else lines.push('GitHub: depo ya da belirteç eksik');
-    notify.alert(lines.join('\n'), { title: 'Bağlantı sınaması', glyph: '🔌' });
-  }
-
-  async initRepo() {
-    const gh = cloud.github();
-    if (!gh.configured) { notify.alert('Önce depo ve belirteç girin.', { title: 'Eksik yapılandırma', glyph: '⚠️' }); return; }
-    try {
-      const r = await gh.initStore({ title: 'OpenOS Cloud App Store' });
-      notify.alert(r.created ? 'catalog.json ve README oluşturuldu.' : `Depo zaten hazır (${r.apps} uygulama).`,
-        { title: 'Depo hazır', glyph: '📦' });
-      this.refreshCatalog();
-    } catch (e) { notify.alert(e.message, { title: 'Hazırlanamadı', glyph: '⚠️' }); }
   }
 
   /* ---------------- grid ---------------- */
@@ -563,28 +721,4 @@ const previewCard = (form) => h('div.as-card',
 const errorCard = (msg) => h('div.k-card', { style: { color: 'var(--red)' } },
   h('div.k-text', { text: '⚠︎ ' + msg }));
 
-const statusText = (st) => {
-  const bits = [`Katalog: ${({ cloud: 'OpenOS Cloud', github: 'GitHub', offline: 'yerleşik' })[st.mode]}`];
-  if (st.api) bits.push(`API: ${st.api}`);
-  if (st.repo) bits.push(`Depo: ${st.repo}`);
-  bits.push(`Yayınlama: ${st.signedIn ? 'Cloud hesabı' : st.github ? 'GitHub belirteci' : 'kapalı'}`);
-  if (st.error) bits.push(`Son hata: ${st.error}`);
-  return bits.join(' · ');
-};
 
-const SETUP_STEPS = `# 1) Mağaza deposu (yalnızca GitHub ile yayınlayacaksanız)
-#    GitHub'da boş bir depo açın:  openos-cloud
-#    Ayarlar → GitHub deposu alanına "kullanici/openos-cloud" yazın
-#    Fine-grained token: Contents → Read and write (yalnızca bu depo)
-#    "Depoyu hazırla" düğmesi catalog.json'ı oluşturur
-
-# 2) OpenOS Cloud API'si (hesaplar + yüklemeler)
-npx wrangler d1 create openos-cloud
-npx wrangler d1 execute openos-cloud --file cloud/schema.sql --remote
-npx wrangler secret put JWT_SECRET
-npx wrangler deploy            # cloud/wrangler.toml içinden
-#    Çıkan adresi yukarıdaki "Cloud API" alanına yapıştırın
-
-# 3) OpenBrow proxy'si (tarayıcının gerçek siteleri açması için)
-npx wrangler deploy cloud/openbrow-proxy.js --name openbrow-proxy \\
-    --compatibility-date 2026-01-01`;

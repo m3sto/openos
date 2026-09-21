@@ -6,6 +6,7 @@ import { h, clamp, uid, Bus, drag, once, $ } from '../core/util.js';
 import { icon } from '../core/icons.js';
 import settings from '../core/settings.js';
 import { Jelly } from './jelly.js';
+import { contextMenu } from './menu.js';
 
 const MENUBAR = 28;
 const EDGE = 6;
@@ -18,6 +19,7 @@ export class Win {
     this.args = opts.args || {};
     this.state = 'normal';
     this.title = opts.title || app.name;
+    this.acilis = Date.now();          /* Görev Yöneticisi çalışma süresini buradan okur */
 
     /* The layer can report 0 while the tab is hidden or mid-resize; never let
        that collapse a window to a negative size. */
@@ -34,7 +36,15 @@ export class Win {
     this.build();
     this.jelly = new Jelly(this.el);
     wm.attach(this);
-    if (Jelly.enabled) setTimeout(() => this.jelly.pulse(0.05, 4), 60);
+    if (Jelly.enabled) setTimeout(() => this.jelly.pulse(9), 60);
+    /* Emniyet: pencere durağana geçtiğinde üzerinde hiçbir dönüşüm kalmamalı —
+       kalırsa içindeki çapraz kaynaklı çerçeve boyanmaz. */
+    setTimeout(() => {
+      if (!this.el.classList.contains('dragging') && !this.el.classList.contains('jelly')) {
+        this.el.style.transform = '';
+        this.el.style.transformOrigin = '';
+      }
+    }, 1800);
   }
 
   build() {
@@ -56,6 +66,26 @@ export class Win {
     this.body = h('div.win-body');
 
     this.el = h('div.win', { dataset: { app: a.id, id: this.id } }, this.bar, this.body);
+    /* Açılış animasyonu `both` dolgulu: başlamadan önce pencereyi
+       `opacity: 0`'da tutar. Bu, animasyon *gerçekten çalıştığı* sürece
+       doğru davranış — ama çalışmadığı durumlar var: arka plandaki sekmede
+       zamanlayıcılar kısılır, sayfa tam ekrana geçerken birleştirici
+       yüzeyleri yeniden kurulur, `prefers-reduced-motion` altında süre
+       sıfırlanır. Animasyon başlamazsa pencere görünmez bir kutu olarak
+       kalıyor ve hiçbir ölçüm bunu göstermiyor: kutu doğru boyda, içerik
+       yerinde, yalnızca boyanmıyor. Bittiği anda — ya da hiç bitmezse
+       süresi dolduğunda — animasyonu söküyoruz; görünürlük bir daha
+       animasyonun çalışmasına bağlı kalmıyor. */
+    const acilisiBitir = () => {
+      if (this._acilisBitti) return;
+      this._acilisBitti = true;
+      clearTimeout(this._acilisSaati);
+      this.el.classList.add('acildi');
+    };
+    this.el.addEventListener('animationend', e => {
+      if (e.target === this.el && e.animationName === 'win-open') acilisiBitir();
+    });
+    this._acilisSaati = setTimeout(acilisiBitir, 700);
     if (a.resizable !== false) {
       ['n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'].forEach(d =>
         this.el.appendChild(h('div.rz.' + d, { onpointerdown: e => this.startResize(e, d) })));
@@ -63,14 +93,49 @@ export class Win {
     this.place();
 
     this.bar.addEventListener('pointerdown', e => {
-      if (e.target.closest('button, .tbtn, input, select')) return;
+      if (e.target.closest('button, .tbtn, input, select, .no-drag')) return;
       this.focus(); this.startDrag(e);
     });
     this.bar.addEventListener('dblclick', e => {
-      if (e.target.closest('button, .tbtn')) return;
+      if (e.target.closest('button, .tbtn, .no-drag')) return;
       this.toggleMax();
     });
     this.el.addEventListener('pointerdown', () => this.focus(), true);
+    contextMenu(this.bar, () => this.windowMenu());
+    contextMenu(this.traffic, () => this.windowMenu());
+  }
+
+  /** Her pencerenin iskeletinde bulunan menü. */
+  windowMenu() {
+    const maxed = this.state === 'max' || this.state === 'snap';
+    return [
+      { header: this.title },
+      { label: 'Küçült', glyph: 'minimize', key: '⌘M', run: () => this.minimize() },
+      { label: maxed ? 'Geri Al' : 'Genişlet', glyph: maxed ? 'restore' : 'maximize',
+        run: () => this.toggleMax() },
+      { label: this.state === 'full' ? 'Tam Ekrandan Çık' : 'Tam Ekran',
+        glyph: 'fullscreen', key: '⌃⌘F', run: () => this.fullscreen() },
+      '-',
+      { label: 'Sola Yapıştır', glyph: 'chevronL', run: () => this.wm.applySnap(this, 'left') },
+      { label: 'Sağa Yapıştır', glyph: 'chevronR', run: () => this.wm.applySnap(this, 'right') },
+      { label: 'Ortala', glyph: 'grid', run: () => this.center() },
+      '-',
+      { label: 'Alta Al', glyph: 'layers', run: () => this.wm.sendToBack(this) },
+      { label: 'Diğerlerini Küçült', glyph: 'eye',
+        run: () => this.wm.list().filter(w => w !== this).forEach(w => w.minimize()) },
+      '-',
+      { label: 'Pencereyi Kapat', glyph: 'x', key: '⌘W', danger: true, run: () => this.close() },
+    ];
+  }
+
+  /** Pencereyi ekranın ortasına taşır. */
+  center() {
+    if (this.state !== 'normal') this.unmaximize();
+    const vw = this.wm.layer.clientWidth, vh = this.wm.layer.clientHeight;
+    this.setBounds(Math.round((vw - this.w) / 2),
+                   Math.max(MENUBAR + 8, Math.round((vh - this.h) / 2.2)),
+                   this.w, this.h, true);
+    this.jelly.pulse(12);
   }
 
   /* ---------------- geometry ---------------- */
@@ -105,42 +170,67 @@ export class Win {
   /* ---------------- interaction ---------------- */
   startDrag(e) {
     if (this.state === 'full') return;
-    const ox = this.x, oy = this.y;
+    let ox = this.x, oy = this.y;
     const wasMax = this.state === 'max';
     const relX = (e.clientX - this.x) / this.w;
-    let hint = null;
+    const relY = (e.clientY - this.y) / this.h;
+    let lastDx = 0, lastDy = 0, rebased = false;
     this.el.classList.add('dragging');
-    this.jelly.begin(e.clientX, e.clientY, {
-      px: (e.clientX - this.x) / this.w,
-      py: (e.clientY - this.y) / this.h,
-    });
+    /* Jöle: tutulan nokta imlece çivilenir, gövdenin geri kalanı tek parça
+       hâlinde arkadan sürüklenir. Önceki denemede pencere dönüyormuş gibi
+       görünüyordu çünkü dört köşenin ayrı yayı vardı ve bağımsız savruluyordu;
+       şimdi tek gecikme yayı var, tutulan nokta yerinde duruyor. */
+    this.jelly.grab(relX, relY);
 
     drag(e, {
       cursor: 'default',
       onMove: ({ dx, dy, x, y, moved }) => {
         if (!moved) return;
-        this.jelly.move(x, y);
-        if (wasMax && this.state === 'max') {
+
+        /* Büyütülmüş pencere sürüklenince eski boyutuna dönüp imlece yapışır;
+           o an öteleme temeli yeniden kurulur. */
+        if (wasMax && !rebased && this.state === 'max') {
+          rebased = true;
           this.unmaximize(true);
-          this.x = clamp(x - this.w * relX, 0, this.wm.layer.clientWidth - this.w);
-          this.y = Math.max(MENUBAR, y - 18);
+          ox = clamp(x - this.w * relX, 0, this.wm.layer.clientWidth - this.w);
+          oy = Math.max(MENUBAR, y - 18);
+          this.x = ox; this.y = oy;
           this.place();
+          lastDx = dx; lastDy = dy;
           return;
         }
-        this.x = ox + dx;
-        this.y = Math.max(MENUBAR, oy + dy);
-        this.place();
+
+        /* Sürükleme boyunca left/top'a dokunulmaz — her kare yerleşim
+           hesabı tetiklemek dönme/takılma hissinin kaynağıydı. Yalnızca
+           bileşik transform güncellenir; GPU katmanında kalır. */
+        const offX = ox + dx - this.x;
+        const offY = Math.max(MENUBAR, oy + dy) - this.y;
+        this.jelly.setOffset(offX, offY);
+        /* Yaya kare başına *fark* verilir: gövde ne kadar hızlı çekilirse
+           o kadar geri kalır. Toplam yer değiştirme değil, hız. */
+        this.jelly.move(dx - lastDx, dy - lastDy);
+        lastDx = dx; lastDy = dy;
+
         const z = this.wm.snapZone(x, y);
-        if (z) { hint = this.wm.showSnapHint(z); } else { this.wm.hideSnapHint(); hint = null; }
+        if (z) this.wm.showSnapHint(z); else this.wm.hideSnapHint();
       },
-      onEnd: ({ x, y, moved }) => {
+      onEnd: ({ dx, dy, x, y, moved }) => {
         this.el.classList.remove('dragging');
-        this.jelly.end();
+        this.jelly.release();
         this.wm.hideSnapHint();
         if (moved) {
+          /* Önce kalıcı konum yazılır, hemen ardından öteleme sıfırlanır.
+             İkisi aynı görevde olduğu için tarayıcı tek kare boyar: pencere
+             bırakıldığı yerde kalır, sıçrama olmaz. */
+          this.x = ox + dx;
+          this.y = Math.max(MENUBAR, oy + dy);
+          this.place();
+          this.jelly.clearOffset();
           const z = this.wm.snapZone(x, y);
           if (z) this.wm.applySnap(this, z);
           else this.clampIntoView();
+        } else {
+          this.jelly.clearOffset();
         }
       },
     });
@@ -153,10 +243,7 @@ export class Win {
     const o = { x: this.x, y: this.y, w: this.w, h: this.h };
     const min = { w: this.app.minWidth || 320, h: this.app.minHeight || 200 };
     this.el.classList.add('resizing');
-    this.jelly.begin(e.clientX, e.clientY, {
-      px: dir.includes('w') ? 1 : dir.includes('e') ? 0 : 0.5,
-      py: dir.includes('n') ? 1 : dir.includes('s') ? 0 : 0.5,
-    });
+
     drag(e, {
       onMove: ({ dx, dy }) => {
         let { x, y, w, h: hh } = o;
@@ -168,7 +255,6 @@ export class Win {
       },
       onEnd: () => {
         this.el.classList.remove('resizing');
-        this.jelly.end();
         this.wm.bus.emit('resized', this);
       },
     });
@@ -176,6 +262,10 @@ export class Win {
 
   clampIntoView() {
     const vw = this.wm.layer.clientWidth, vh = this.wm.layer.clientHeight;
+    /* Katman ölçülemiyorsa (sekme gizli, panel kapalı) sınırlar ters döner:
+       clamp alt sınırı üst sınırdan büyük olur ve pencere köşeye fırlar.
+       Ölçü yoksa konuma hiç dokunulmaz. */
+    if (vw < 120 || vh < 120) return;
     this.x = clamp(this.x, -this.w + 90, vw - 90);
     this.y = clamp(this.y, MENUBAR, vh - 40);
     this.place();
@@ -197,7 +287,7 @@ export class Win {
     const vw = this.wm.layer.clientWidth, vh = this.wm.layer.clientHeight;
     const dockGap = settings.get('dock.autohide') ? 6 : (settings.get('dock.size') + 22);
     this.setBounds(0, MENUBAR, vw, vh - MENUBAR - (settings.get('dock.position') === 'bottom' ? dockGap : 6));
-    setTimeout(() => { this.el.classList.remove('snapping'); this.jelly.pulse(0.05, 0); }, 230);
+    setTimeout(() => { this.el.classList.remove('snapping'); this.jelly.pulse(14); }, 230);
     this.wm.bus.emit('state', this);
   }
   unmaximize(silent, animate) {
@@ -246,9 +336,43 @@ export class Win {
     this.wm.bus.emit('restore', this);
   }
 
+  /**
+   * Kapatır. `onBeforeClose` eşzamansız olabilir — metin düzenleyici
+   * "kaydedilmemiş değişiklik" sorusunu böyle soruyor. Eski sürüm dönen
+   * değeri doğrudan `=== false` ile karşılaştırıyordu; bir Promise hiçbir
+   * zaman `false`'a eşit olmadığı için koruma hiç çalışmıyor, pencere
+   * cevabı beklemeden kapanıyor ve soruyu gösteren diyalog da penceresiyle
+   * birlikte yok oluyordu. Yani uyarı vardı ama kimse göremiyordu ve
+   * kaydedilmemiş veri sessizce gidiyordu.
+   */
   close() {
+    if (this._closing || this._soruluyor) return;
+
+    if (this.onBeforeClose) {
+      let sonuc;
+      try { sonuc = this.onBeforeClose(); }
+      catch (e) { console.warn('[win] onBeforeClose hata verdi', e); sonuc = true; }
+
+      if (sonuc && typeof sonuc.then === 'function') {
+        /* Soru sorulurken ikinci bir kapatma isteği yok sayılır. */
+        this._soruluyor = true;
+        sonuc.then(izin => {
+          this._soruluyor = false;
+          if (izin !== false) this._kapat();
+        }).catch(e => {
+          this._soruluyor = false;
+          console.warn('[win] kapanış onayı başarısız', e);
+        });
+        return;
+      }
+      if (sonuc === false) return;
+    }
+    this._kapat();
+  }
+
+  /** Asıl kapanış — onay aşaması geçildikten sonra. */
+  _kapat() {
     if (this._closing) return;
-    if (this.onBeforeClose && this.onBeforeClose() === false) return;
     this._closing = true;
     this.el.classList.add('closing');
     this.wm.bus.emit('close', this);
@@ -324,6 +448,19 @@ export class WindowManager {
     this.order = this.order.filter(w => w !== win).concat(win);
     this.bus.emit('focus', win);
   }
+  /** Pencereyi yığının en altına gönderir; odak bir üsttekine geçer. */
+  sendToBack(win) {
+    const others = this.order.filter(w => w !== win);
+    if (!others.length) return;
+    const minZ = Math.min(...others.map(w => parseInt(w.el.style.zIndex || '100', 10)));
+    win.el.style.zIndex = String(Math.max(1, minZ - 1));
+    win.el.classList.remove('focused');
+    this.order = [win, ...others];
+    const top = others[others.length - 1];
+    if (top && top.state !== 'min') this.focus(top);
+    this.bus.emit('state', win);
+  }
+
   focusNext(except) {
     const next = [...this.order].reverse().find(w => w !== except && w.state !== 'min');
     if (next) this.focus(next);
@@ -345,6 +482,9 @@ export class WindowManager {
   /* ---------------- snapping ---------------- */
   snapZone(x, y) {
     const vw = this.layer.clientWidth, vh = this.layer.clientHeight;
+    /* Ölçülemeyen katmanda her nokta sağ kenarın ötesinde sayılır ve pencere
+       kendiliğinden yapışır; ölçü yoksa yapışma bölgesi de yoktur. */
+    if (vw < 120 || vh < 120) return null;
     if (y <= MENUBAR + EDGE) return 'top';
     if (x <= EDGE) return y > vh * 0.62 ? 'bl' : (y < vh * 0.38 ? 'tl' : 'left');
     if (x >= vw - EDGE) return y > vh * 0.62 ? 'br' : (y < vh * 0.38 ? 'tr' : 'right');
@@ -380,7 +520,7 @@ export class WindowManager {
     win._restore = win._restore || { x: win.x, y: win.y, w: win.w, h: win.h };
     win.state = 'snap';
     win.setBounds(r.x, r.y, r.w, r.h, true);
-    setTimeout(() => win.jelly.pulse(0.055, 0), 210);
+    setTimeout(() => win.jelly.pulse(14), 210);
   }
 
   /** Tile every visible window in a grid (Mission Control "tidy"). */

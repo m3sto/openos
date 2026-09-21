@@ -1,0 +1,244 @@
+app {
+  name: "Bütçe"
+  id: "butce"
+  version: "1.0.0"
+  icon: "chart"
+  tint: ["#30d158", "#0c7a34"]
+  width: 760
+  height: 580
+  author: "m3sto"
+  about: "Gelir gider takibi: kategoriler, aylık özet, kalıcı kayıt ve grafik."
+  permissions: ["fs"]
+}
+
+# ---------------------------------------------------------------- veri
+
+type Hareket {
+  id = ""
+  tur = "gider"        # gelir | gider
+  tutar = 0
+  kategori = "Diğer"
+  not = ""
+  tarih = 0
+
+  fn isaretli() {
+    return self.tur == "gelir" ? self.tutar : -self.tutar
+  }
+  fn ay() {
+    let p = date_parts(self.tarih)
+    return "${p.year}-${pad(str(p.month), 2)}"
+  }
+}
+
+let KATEGORILER = ["Market", "Ulaşım", "Fatura", "Kira", "Sağlık", "Eğlence", "Maaş", "Diğer"]
+let RENKLER = {
+  Market: "#30d158", "Ulaşım": "#0a84ff", Fatura: "#ff9f0a", Kira: "#bf5af2",
+  "Sağlık": "#ff375f", "Eğlence": "#5ac8fa", "Maaş": "#32d74b", "Diğer": "#8e8e93"
+}
+
+state hareketler = []
+state ay = ""
+state kip = "ozet"          # ozet | liste | ekle
+state yeni = { tur: "gider", tutar: "", kategori: "Market", not: "" }
+state suzgec = ""
+
+fn buAy() {
+  let p = date_parts(now())
+  return "${p.year}-${pad(str(p.month), 2)}"
+}
+
+fn yukle() {
+  let ham = store_get("hareketler", [])
+  hareketler = map(ham, fn(h) => Hareket(id: h.id, tur: h.tur, tutar: h.tutar,
+                                          kategori: h.kategori, not: h.not, tarih: h.tarih))
+  ay = buAy()
+}
+
+fn kaydet() {
+  store_set("hareketler", map(hareketler, fn(h) => {
+    id: h.id, tur: h.tur, tutar: h.tutar, kategori: h.kategori, not: h.not, tarih: h.tarih
+  }))
+}
+
+fn ekle() {
+  let t = num(yeni.tutar)
+  if t <= 0 {
+    toast("Tutar sıfırdan büyük olmalı")
+    return
+  }
+  push(hareketler, Hareket(id: uuid(), tur: yeni.tur, tutar: t,
+                            kategori: yeni.kategori, not: trim(yeni.not), tarih: now()))
+  yeni = { tur: yeni.tur, tutar: "", kategori: yeni.kategori, not: "" }
+  kaydet()
+  kip = "liste"
+}
+
+fn sil(h) {
+  confirm("Bu hareket silinsin mi?", fn(ok) {
+    if not ok { return }
+    hareketler = filter(hareketler, fn(x) => x.id != h.id)
+    kaydet()
+    refresh()
+  })
+}
+
+# ------------------------------------------------------------- hesaplar
+
+fn aylar() {
+  let liste = unique(map(hareketler, fn(h) => h.ay()))
+  return reverse(sort(liste))
+}
+
+fn ayinHareketleri() {
+  let a = filter(hareketler, fn(h) => h.ay() == ay)
+  let q = lower(trim(suzgec))
+  if q != "" {
+    a = filter(a, fn(h) => contains(lower(h.kategori + " " + h.not), q))
+  }
+  return reverse(sort(a, fn(x, y) => x.tarih - y.tarih))
+}
+
+fn toplam(tur) {
+  return sum(map(filter(ayinHareketleri(), fn(h) => h.tur == tur), fn(h) => h.tutar))
+}
+
+fn bakiye() { return toplam("gelir") - toplam("gider") }
+
+fn kategoriDagilimi() {
+  let giderler = filter(ayinHareketleri(), fn(h) => h.tur == "gider")
+  let gruplar = {}
+  for h in giderler {
+    gruplar[h.kategori] = (gruplar[h.kategori] ?? 0) + h.tutar
+  }
+  let cikti = []
+  for k, v in gruplar {
+    push(cikti, { ad: k, tutar: v, renk: RENKLER[k] ?? "#8e8e93" })
+  }
+  return reverse(sort(cikti, fn(x, y) => x.tutar - y.tutar))
+}
+
+fn para(n) { return format(n, 2) + " ₺" }
+
+# --------------------------------------------------------------- çizim
+
+fn cizGrafik(p) {
+  p.clear()
+  let veri = kategoriDagilimi()
+  if len(veri) == 0 {
+    p.fill("#8e8e9366").text("Bu ay gider yok", p.width / 2, p.height / 2, 13, "center")
+    return
+  }
+
+  let enBuyuk = max(map(veri, fn(d) => d.tutar))
+  let n = min(len(veri), 6)
+  let bosluk = 10
+  let genislik = (p.width - bosluk * (n + 1)) / n
+  let taban = p.height - 26
+
+  for i in n {
+    let d = veri[i]
+    let y = (d.tutar / enBuyuk) * (taban - 20)
+    let x = bosluk + i * (genislik + bosluk)
+    p.fill(d.renk).rect(x, taban - y, genislik, y, 6)
+    p.fill("#8e8e93").text(slice(d.ad, 0, 8), x + genislik / 2, p.height - 9, 10, "center")
+    p.fill("#8e8e93").text(format(d.tutar, 0), x + genislik / 2, taban - y - 6, 10, "center")
+  }
+}
+
+yukle()
+
+# -------------------------------------------------------------- görünüm
+
+view {
+  VStack(spacing: 0, grow: true) {
+
+    HStack(spacing: 8, padding: 12) {
+      Segmented(kip, options: ["ozet", "liste", "ekle"], bind: "kip")
+      Spacer()
+      Select(ay, options: len(aylar()) > 0 ? aylar() : [buAy()], bind: "ay")
+    }
+    Divider()
+
+    if kip == "ozet" {
+      ScrollView(grow: true) {
+        VStack(spacing: 14, padding: 16) {
+
+          HStack(spacing: 10) {
+            Card("Gelir") { Label(para(toplam("gelir")), style: "title", color: "#30d158") }
+            Card("Gider") { Label(para(toplam("gider")), style: "title", color: "#ff375f") }
+            Card("Bakiye") {
+              Label(para(bakiye()), style: "title", tint: bakiye() >= 0)
+            }
+          }
+
+          Section("Kategoriye göre gider") {
+            Canvas(height: 190, draw: cizGrafik)
+          }
+
+          if len(kategoriDagilimi()) > 0 {
+            Section("Dağılım") {
+              List {
+                for d in kategoriDagilimi() {
+                  ListItem(d.ad,
+                           subtitle: "%${format((d.tutar / max(1, toplam('gider'))) * 100, 1)}",
+                           glyph: "chart")
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if kip == "liste" {
+      VStack(spacing: 0, grow: true) {
+        HStack(spacing: 8, padding: 10) {
+          TextField(suzgec, placeholder: "Kategori ya da not ara", bind: "suzgec",
+                    icon: "search", grow: true)
+        }
+        Divider()
+        ScrollView(grow: true) {
+          VStack(spacing: 4, padding: 10) {
+            if len(ayinHareketleri()) == 0 {
+              Empty("Bu ayda kayıt yok", glyph: "chart")
+            }
+            for h in ayinHareketleri() {
+              HStack(spacing: 10) {
+                Badge(h.tur == "gelir" ? "+" : "−")
+                VStack(spacing: 1, grow: true) {
+                  Label(h.kategori, weight: 560)
+                  Caption(h.not == "" ? date_format(h.tarih, "kisa") : h.not)
+                }
+                Label(para(h.tutar), color: h.tur == "gelir" ? "#30d158" : "#ff375f")
+                Button("", icon: "trash", variant: "ghost", onClick: fn() { sil(h) })
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if kip == "ekle" {
+      ScrollView(grow: true) {
+        VStack(spacing: 12, padding: 18) {
+          Segmented(yeni.tur, options: ["gider", "gelir"],
+                    onChange: fn(v) { yeni.tur = v })
+          TextField(yeni.tutar, placeholder: "Tutar", type: "number",
+                    onChange: fn(v) { yeni.tutar = v })
+          Select(yeni.kategori, options: KATEGORILER,
+                 onChange: fn(v) { yeni.kategori = v })
+          TextField(yeni.not, placeholder: "Not (isteğe bağlı)",
+                    onChange: fn(v) { yeni.not = v })
+          Button("Ekle", variant: "primary", size: "lg", full: true, onClick: ekle)
+        }
+      }
+    }
+
+    Divider()
+    HStack(spacing: 8, padding: 9) {
+      Caption("${len(ayinHareketleri())} kayıt · ${ay}")
+      Spacer()
+      Caption("Toplam ${len(hareketler)} hareket")
+    }
+  }
+}

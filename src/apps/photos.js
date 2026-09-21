@@ -75,7 +75,8 @@ class Photos {
           onclick: () => this.openImage(f, data) }, h('div.cap', h('span', { text: f.name })));
         contextMenu(tile, () => [
           { label: 'Aç', run: () => this.openImage(f, data) },
-          { label: 'Sil', danger: true, run: () => { vfs.remove(f.path); this.render(); } },
+          { label: 'Çöp Kutusuna At', glyph: 'trash', danger: true,
+            run: () => { this.ctx.os.trash(f.path); this.render(); } },
         ]);
         this.grid.appendChild(tile);
       });
