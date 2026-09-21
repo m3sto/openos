@@ -275,6 +275,9 @@ class SettingsApp {
         h('button.k-btn.s-sm', { text: 'Sıfırla', onclick: () => { settings.set('desktopIcons', {}); notify.toast('Düzenlendi'); } })),
     );
     this.group('Pencereler',
+      this.row('sparkles', 'var(--cyan)', 'Aero cam',
+        'Buzlu cam başlık paneli ve trafik ışıklarında neon parıltı',
+        this.toggle('desktop.aero')),
       this.row('window', 'var(--indigo)', 'Kenara yapıştırma', 'Pencereyi kenara sürükleyerek yerleştirin',
         h('span.k-badge.b-green', { text: 'Etkin' })),
       this.row('bolt', 'var(--pink)', 'Jöle modu', 'Pencereler sürüklenirken yumuşak bir gövde gibi esner',

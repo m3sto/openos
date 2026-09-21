@@ -31,7 +31,8 @@ export const DEFAULTS = {
   wallpaperMotion: true,
   user: { name: 'Kullanıcı', avatar: '🧑‍🚀', password: '' },
   dock: { position: 'bottom', size: 52, magnify: true, autohide: false },
-  desktop: { showIcons: true, showWidgets: true, gridSnap: true, jelly: true, jellyStrength: 1 },
+  desktop: { showIcons: true, showWidgets: true, gridSnap: true, jelly: true, jellyStrength: 1,
+             aero: true },   // Aero cam: buzlu başlık paneli + neon trafik ışıkları
   system: { reduceMotion: false, sounds: true, brightness: 100, volume: 60 },
   network: { mode: 'ethernet', wifi: false, bluetooth: false, bluetoothAvailable: false,
              airdrop: true, ssid: 'OpenOS-Net', link: '1 Gb/s' },
@@ -117,7 +118,7 @@ class Settings {
     this._save();
     this.bus.emit('change', path, value, prev);
     this.bus.emit(`change:${path}`, value, prev);
-    if (['theme', 'accent', 'system.reduceMotion', 'system.brightness'].includes(path)
+    if (['theme', 'accent', 'system.reduceMotion', 'system.brightness', 'desktop.aero'].includes(path)
         || path.startsWith('graphics.')) this.apply();
     return value;
   }
@@ -153,6 +154,9 @@ class Settings {
     root.style.setProperty('--accent-fg', '#ffffff');
     root.style.setProperty('--dock-h', (this.data.dock.size + 18) + 'px');
     root.classList.toggle('reduce-motion', !!this.data.system.reduceMotion);
+    /* Aero cam tek bir anahtar: buzlu başlık paneli ve trafik ışıklarının
+       neon parıltısı birlikte gelir, ayrı "tema" seçimi yok. */
+    root.classList.toggle('aero', !!this.data.desktop?.aero);
     root.classList.add('os-cursor');   /* sistemin imleci her zaman geçerli */
     this.applyGraphics(root);
     const b = (this.data.system.brightness ?? 100) / 100;

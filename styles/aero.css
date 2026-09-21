@@ -1,0 +1,116 @@
+/* ==========================================================================
+   OpenOS · aero.css — Aero cam
+
+   Tek bir anahtarla gelen görünüm: buzlu cam başlık paneli ve trafik
+   ışıklarında neon parıltı. Ayrı bir "tema" seçimi değil — `html.aero`
+   sınıfı var ya da yok (Ayarlar › Görünüm).
+
+   Cam yalnızca **başlık panelinde**. Pencere gövdesine `backdrop-filter`
+   verilmiyor ve bu bilerek: bu projede dönüşümlü, yuvarlak köşeli ve
+   kırpılmış bir katmanın içindeki çapraz kaynaklı <iframe> hiç boyanmıyor
+   (OpenBrow bembeyaz açılıyordu). Gövde zaten uygulama içeriğiyle dolu,
+   arkasındaki masaüstü görünmüyor; camın görüldüğü tek yer panel.
+
+   Grafik ayarlarına saygılı: blur kapalıysa ya da saydamlık kapalıysa
+   Aero kendini donuk yüzeye indirir, kapanmaz.
+   ========================================================================== */
+
+html.aero {
+  /* Camın kendi değişkenleri; tema değişkenlerine dokunulmuyor. */
+  --aero-tint: color-mix(in srgb, var(--surface) 62%, transparent);
+  --aero-sheen: rgba(255, 255, 255, .34);
+  --aero-rim: rgba(255, 255, 255, .16);
+}
+html.aero[data-theme="dark"] {
+  --aero-tint: color-mix(in srgb, var(--surface) 58%, transparent);
+  --aero-sheen: rgba(255, 255, 255, .13);
+  --aero-rim: rgba(255, 255, 255, .09);
+}
+
+/* ---- başlık paneli: buzlu cam ---- */
+html.aero .win-bar {
+  background: var(--aero-tint);
+  backdrop-filter: blur(34px) saturate(190%) brightness(1.06);
+  -webkit-backdrop-filter: blur(34px) saturate(190%) brightness(1.06);
+  /* Aero'nun imzası: üst kenarda ince bir aydınlık çizgi (ışığın cam
+     kenarından kırılması) ve altta yumuşak bir ayırıcı. */
+  box-shadow:
+    inset 0 1px 0 var(--aero-sheen),
+    inset 0 -.5px 0 var(--hairline-soft);
+  position: relative;
+}
+/* Panelin üst yarısına oturan çok hafif parlaklık geçişi — düz bir bulanıklık
+   cam gibi durmuyor, ışığın yüzeyden kayması gerekiyor. */
+html.aero .win-bar::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 60%;
+  background: linear-gradient(to bottom, rgba(255,255,255,.10), transparent);
+  pointer-events: none;
+}
+
+/* Pencerenin dış kenarına ince bir cam çerçevesi. `box-shadow` kullanılıyor;
+   `border` kutuyu büyütür ve içerideki yerleşimi kaydırırdı. */
+html.aero .win {
+  box-shadow: var(--sh-win-blur), inset 0 0 0 .5px var(--aero-rim);
+}
+html.aero .win.focused {
+  box-shadow: var(--sh-win), inset 0 0 0 .5px var(--aero-rim);
+}
+
+/* ---- trafik ışıkları: neon parıltı ---- */
+html.aero .traffic button {
+  box-shadow:
+    inset 0 0 0 .5px rgba(0, 0, 0, .22),
+    inset 0 1px 1px rgba(255, 255, 255, .45);
+  transition: box-shadow var(--t-fast), filter var(--t-fast);
+}
+html.aero .win.focused .traffic .c {
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22), inset 0 1px 1px rgba(255,255,255,.45),
+              0 0 6px rgba(255, 95, 87, .95), 0 0 14px rgba(255, 95, 87, .5);
+}
+html.aero .win.focused .traffic .m {
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22), inset 0 1px 1px rgba(255,255,255,.45),
+              0 0 6px rgba(254, 188, 46, .95), 0 0 14px rgba(254, 188, 46, .5);
+}
+html.aero .win.focused .traffic .z {
+  box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22), inset 0 1px 1px rgba(255,255,255,.45),
+              0 0 6px rgba(40, 200, 64, .95), 0 0 14px rgba(40, 200, 64, .5);
+}
+/* Üzerine gelince parıltı büyür — düğmenin tıklanabilir olduğunu söyleyen şey. */
+html.aero .win.focused .traffic:hover .c { box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22), 0 0 9px rgba(255,95,87,1), 0 0 22px rgba(255,95,87,.65); }
+html.aero .win.focused .traffic:hover .m { box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22), 0 0 9px rgba(254,188,46,1), 0 0 22px rgba(254,188,46,.65); }
+html.aero .win.focused .traffic:hover .z { box-shadow: inset 0 0 0 .5px rgba(0,0,0,.22), 0 0 9px rgba(40,200,64,1), 0 0 22px rgba(40,200,64,.65); }
+
+/* ---- menü çubuğu ve Dock da aynı camdan ---- */
+html.aero .menubar {
+  backdrop-filter: blur(34px) saturate(190%) brightness(1.05);
+  -webkit-backdrop-filter: blur(34px) saturate(190%) brightness(1.05);
+  box-shadow: inset 0 -.5px 0 var(--hairline-soft), inset 0 1px 0 var(--aero-sheen);
+}
+html.aero .dock {
+  backdrop-filter: blur(34px) saturate(190%);
+  -webkit-backdrop-filter: blur(34px) saturate(190%);
+  box-shadow: inset 0 1px 0 var(--aero-sheen), var(--sh-pop);
+}
+
+/* ---- grafik ayarlarına saygı ----
+   Kullanıcı bulanıklığı ya da saydamlığı kapattıysa Aero cam olmaktan çıkar
+   ama parıltı kalır: iki ayar birbirini iptal etmemeli, sadece sınırlamalı. */
+html.aero.gfx-blur-off .win-bar,
+html.aero.gfx-opaque .win-bar,
+html.aero.gfx-blur-off .menubar,
+html.aero.gfx-opaque .menubar,
+html.aero.gfx-blur-off .dock,
+html.aero.gfx-opaque .dock {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background: var(--surface);
+}
+html.aero.gfx-blur-low .win-bar {
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+/* Sürükleme sırasında cam askıya alınır (window.css'teki kuralla aynı
+   gerekçe: hareket eden katmanın arkasını her karede yeniden bulanıklaştırmak
+   kare süresini katlıyor). Parıltı ucuz, o kalır. */
+html.aero .win.dragging .win-bar::before,
+html.aero .win.resizing .win-bar::before { opacity: 0; }

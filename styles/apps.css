@@ -32,10 +32,36 @@
 /* ---------------- Terminal ---------------- */
 .term {
   flex: 1; width: 100%; display: flex; flex-direction: column; overflow: auto;
-  background: var(--term-bg, #0c0d11); color: #d7dae0;
+  /* Buzlu cam üstüne ince bir siyah tonu: arkadaki duvar kâğıdı seçilir ama
+     metin her zaman okunur kalır. Bulanıklık burada güvenli — terminalde
+     çapraz kaynaklı çerçeve yok (OpenBrow'da olduğu gibi boyanmama riski
+     taşımıyor). */
+  background: var(--term-bg, rgba(10, 11, 15, .72));
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  color: #d7dae0;
   font-family: var(--mono); font-size: 12.5px; line-height: 1.55; padding: 12px 14px;
 }
-html[data-theme="light"] .term { --term-bg: #131419; }
+html[data-theme="light"] .term { --term-bg: rgba(14, 15, 20, .74); }
+/* Kullanıcı saydamlığı ya da bulanıklığı kapattıysa terminal donuk olur. */
+html.gfx-blur-off .term, html.gfx-opaque .term {
+  background: #0c0d11; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+
+/* Terminalin kendi seçimi. Tarayıcının yumuşak, yuvarlatılmış mavi seçimi
+   burada yanlış duruyordu: gerçek bir terminalde seçim, karakter hücrelerini
+   dolduran keskin bir bloktur. Satır kutusunun tamamını kaplasın diye
+   seçim `.term-out` içindeki her öğeye veriliyor. */
+.term ::selection, .term-input::selection {
+  background: #2f5d8f; color: #ffffff; text-shadow: none;
+}
+.term ::-moz-selection, .term-input::-moz-selection {
+  background: #2f5d8f; color: #ffffff; text-shadow: none;
+}
+/* Seçim bloğu satır boşluklarını da doldursun — aradaki beyaz şeritler
+   seçimi "metin" gibi gösteriyordu, "ekran" gibi değil. */
+.term-out { line-height: 1.55; }
+.term-row { display: block; }
 .term-out { white-space: pre-wrap; word-break: break-word;
   user-select: text; -webkit-user-select: text; }
 .term-row { white-space: pre-wrap; word-break: break-word; }
