@@ -10,7 +10,7 @@ import studio from './studio.js';
 import settingsApp from './settings-app.js';
 import texteditor from './texteditor.js';
 import notes from './notes.js';
-import calculator from './calculator.js';
+import calculator from './calculator.jsx';
 import browser from './openbrow.js';
 import photos from './photos.js';
 import calendar from './calendar.js';
