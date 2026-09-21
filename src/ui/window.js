@@ -173,11 +173,14 @@ export class Win {
     let ox = this.x, oy = this.y;
     const wasMax = this.state === 'max';
     const relX = (e.clientX - this.x) / this.w;
+    const relY = (e.clientY - this.y) / this.h;
     let lastDx = 0, lastDy = 0, rebased = false;
     this.el.classList.add('dragging');
-    /* Sürükleme sırasında bilerek hiç deformasyon yok: pencere imlecin altında
-       birebir durur. Eğriltme uygulandığında pencere dönüyormuş ve imlecin
-       arkasından geliyormuş gibi görünüyordu. */
+    /* Jöle: tutulan nokta imlece çivilenir, gövdenin geri kalanı tek parça
+       hâlinde arkadan sürüklenir. Önceki denemede pencere dönüyormuş gibi
+       görünüyordu çünkü dört köşenin ayrı yayı vardı ve bağımsız savruluyordu;
+       şimdi tek gecikme yayı var, tutulan nokta yerinde duruyor. */
+    this.jelly.grab(relX, relY);
 
     drag(e, {
       cursor: 'default',
@@ -203,6 +206,9 @@ export class Win {
         const offX = ox + dx - this.x;
         const offY = Math.max(MENUBAR, oy + dy) - this.y;
         this.jelly.setOffset(offX, offY);
+        /* Yaya kare başına *fark* verilir: gövde ne kadar hızlı çekilirse
+           o kadar geri kalır. Toplam yer değiştirme değil, hız. */
+        this.jelly.move(dx - lastDx, dy - lastDy);
         lastDx = dx; lastDy = dy;
 
         const z = this.wm.snapZone(x, y);
@@ -210,6 +216,7 @@ export class Win {
       },
       onEnd: ({ dx, dy, x, y, moved }) => {
         this.el.classList.remove('dragging');
+        this.jelly.release();
         this.wm.hideSnapHint();
         if (moved) {
           /* Önce kalıcı konum yazılır, hemen ardından öteleme sıfırlanır.
